@@ -18,6 +18,8 @@ args = parser.parse_args()
 FILENAME = args.filename
 TMP = "tmp/"
 WOC = TMP + "woc_" + FILENAME
+ALWAYS = TMP + "always_comb"
+SV = ".sv"
 
 def setup():
     if os.path.isdir(os.getcwd() + "/tmp"):
@@ -104,9 +106,8 @@ def get_always_combs(lines):
                 comb = comb + line
 
             if parens == 0:
-                with open(TMP + "always_comb" + str(count) + ".txt", "w") as f:
+                with open(ALWAYS + str(count) + SV, "w") as f:
                     f.write(comb)
-                # always_combs.append(comb)
                 count += 1
                 comb = ""
     
@@ -116,7 +117,7 @@ def get_vars(count):
     cs = ""
     ns = ""
     for i in range(count):
-        with open(TMP + "always_comb" + str(i) + ".txt") as f:
+        with open(ALWAYS + str(i) + SV) as f:
             lines = f.readlines()
 
             for line in lines:
@@ -135,6 +136,49 @@ def get_vars(count):
     
     return (cs, ns)
 
+# figures out which always_comb block indicates state transitions
+def get_stf(count, ns):
+    for i in range(count):
+        with open(ALWAYS + str(i) + SV) as f:
+            lines = f.readlines()
+
+            for line in lines:
+                if ns in line:
+                    return i
+                    break
+
+def get_state_blocks(states, lines):
+    block = ""
+    parens = 0
+    cs = ""
+
+    for line in lines:
+        if block == "":
+            for state in states:
+                if state in line:
+                    cs = state
+                    block = line
+
+        if block != "":
+            if "begin" in line:
+                parens += 1
+            if "end" in line:
+                parens -= 1
+
+            if block != line:
+                block = block + line
+
+            if parens == 0:
+                with open(TMP + cs + SV, "w") as f:
+                    f.write(block)
+                print(block)
+                block = ""
+                cs = ""
+        
+        # print((parens, len(block), line))
+
+    
+
 ################################################################################
 
 # make sure file exists
@@ -152,16 +196,24 @@ with open(WOC, "r") as f:
 
 # get state names and variable names
 states, state_vars = get_states(lines)
+states.append("default")
 print(states)
 
 # get always comb blocks
 count = get_always_combs(lines)
-# print(always_combs[0])
-# print(always_combs[1])
 
 # define name for current and next states
 cs, ns = get_vars(count)
 print(cs)
 print(ns)
+
+stf = get_stf(count, ns)
+print(stf)
+
+with open(ALWAYS + str(stf) + SV, "r") as f:
+    lines = f.readlines()
+
+get_state_blocks(states, lines)
+
 
 # cleanup()
