@@ -112,6 +112,29 @@ def get_always_combs(lines):
     
     return count
 
+def get_vars(count):
+    cs = ""
+    ns = ""
+    for i in range(count):
+        with open(TMP + "always_comb" + str(i) + ".txt") as f:
+            lines = f.readlines()
+
+            for line in lines:
+                if "case" in line:
+                    cond = line.partition("(")[2].partition(")")[0]
+                    if cond in state_vars:
+                        cs = cond
+                    break
+        
+        if cs != "":
+            for var in state_vars:
+                if var != cs:
+                    ns = var
+                    break
+            break
+    
+    return (cs, ns)
+
 ################################################################################
 
 # make sure file exists
@@ -130,25 +153,15 @@ with open(WOC, "r") as f:
 # get state names and variable names
 states, state_vars = get_states(lines)
 print(states)
-print(state_vars)
 
 # get always comb blocks
 count = get_always_combs(lines)
 # print(always_combs[0])
 # print(always_combs[1])
 
-# for i in range(count):
-#     with open("always_comb" + str(i) + ".txt") as f:
-
-
-
-# for line in lines:
-#     if "case" in line:
-#        cs = line.partition("(")[2].partition(")")[0]
-#        break
-
-
-# for state in states:
-
+# define name for current and next states
+cs, ns = get_vars(count)
+print(cs)
+print(ns)
 
 # cleanup()
