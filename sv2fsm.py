@@ -1,6 +1,8 @@
 import argparse
+import math
 import os
 import shutil
+from PIL import Image, ImageDraw
 
 ''' steps
 
@@ -30,6 +32,56 @@ def setup():
 def cleanup():
     if os.path.isdir(os.getcwd() + "/tmp"):
         shutil.rmtree("tmp")
+
+################################################################################
+
+def get_depth(line):
+    tabs = 0
+    for c in line:
+        if c == "\t":
+            tabs += 1
+        else:
+            break
+    
+    return tabs
+
+def get_equiv_parens(line):
+    equiv = ""
+
+    for c in line:
+        if (c == "(") or (c == ")"):
+            equiv = equiv + c
+
+    return equiv    
+
+def rem_parens(line):
+    equiv = get_equiv_parens(line)
+    if len(equiv)%2 == 1:
+        print("parens don't match at start")
+    spl = equiv.partition("(())")
+
+    while spl[1] != "":
+        nline = ""
+        count = 0
+        for c in line:
+            if (c == "(") or (c == ")"):
+                count += 1
+                if (count == len(spl[0]) + 1) or (count == len(spl[0] + spl[1])):
+                    continue
+                else:
+                    nline = nline + c
+            else:
+                nline = nline + c
+
+        line = nline
+        equiv = get_equiv_parens(line)
+        if len(equiv)%2 == 1:
+            print("parens don't match")
+        spl = equiv.partition("(())")
+    
+    return line
+
+################################################################################
 
 def rem_comments(line, multiline):
     if line == "":
@@ -67,6 +119,8 @@ def commentless_file(filename):
             commentless_line, multiline = rem_comments(line, multiline)
             f.write(commentless_line)
 
+################################################################################
+
 def get_states(lines):
     enum = ""
     found = False
@@ -80,6 +134,8 @@ def get_states(lines):
         elif "enum " in line:
             enum = line.strip()
             found = True
+            if ";" in line:
+                break
 
     tmp = enum.partition("{")[2].partition("}")
     states = tmp[0].replace(" ", "").split(",")
@@ -147,6 +203,38 @@ def get_stf(count, ns):
                     return i
                     break
 
+def format_states(states):
+    for state in states:
+        if not os.path.exists(TMP + state + SV):
+            print(TMP + state + SV + " does not exist")
+            break
+
+        with open(TMP + state + SV, "r") as f:
+            lines = f.readlines()
+        
+        os.remove(TMP + state + SV)
+        with open(TMP + state + SV, "w") as f:
+            for i, line in enumerate(lines):
+                if i == 0:
+                    continue
+                blocks = line.partition("begin")
+                for block in blocks:
+                    if block.rstrip() != "":
+                        f.write(block.rstrip()+"\n")
+
+        with open(TMP + state + SV, "r") as f:
+            lines = f.readlines()
+
+        with open(TMP + state + SV, "w") as f:
+            parens = 0
+            for line in lines:
+                if "begin" in line:
+                    parens += 1
+                elif "end" in line:
+                    parens -= 1
+                else:
+                    f.write("\t"*parens + line)
+
 def get_state_blocks(states, lines):
     block = ""
     parens = 0
@@ -157,7 +245,7 @@ def get_state_blocks(states, lines):
             for state in states:
                 if state in line:
                     cs = state
-                    block = line
+                    block = line.lstrip()
 
         if block != "":
             if "begin" in line:
@@ -165,20 +253,23 @@ def get_state_blocks(states, lines):
             if "end" in line:
                 parens -= 1
 
-            if block != line:
-                block = block + line
-
             if parens == 0:
                 with open(TMP + cs + SV, "w") as f:
                     f.write(block)
                 block = ""
                 cs = ""
+            elif block != line.lstrip():
+                block = block + line.lstrip()
+
+    format_states(states)
+
+################################################################################
 
 def get_condition(index, lines):
     cond = ""
     parens = 0
     found = False
-    while parens != 0 or not found:
+    while (index < len(lines)) and (parens != 0 or not found):
         line = lines[index].strip()
         for c in line:
             if c == "(":
@@ -196,22 +287,115 @@ def get_condition(index, lines):
 
         index += 1
     
-    return cond[1:]
+    return (cond[1:], index)
 
+def get_next_state(index, lines):
+    next_state = lines[index].partition("=")[2].strip()
+    if next_state.partition(";")[1] != "":
+        next_state = next_state.partition(";")[0]
+        index += 1
+    else:
+        found = False
+        index += 1
+        while (index < len(lines)) and not found:
+            line = lines[index]
+            if line.partition(";")[1] != "":
+                next_state = next_state + line.partition(";")[0].strip()
+                break
+            index += 1
+    
+    return (next_state.strip(), index)
 
-# def get_transition(ns, line):
-    # print(ns)
+def format_transition(cond_layer, transition):
+    tran_layer = ""
+    if cond_layer[-1] == "": # in else case
+        for condition in cond_layer[:-1]:
+            if tran_layer == "":
+                tran_layer = "(" + condition + ")"
+            else:
+                tran_layer = tran_layer + " || (" + condition + ")"
+        
+        tran_layer = "!(" + tran_layer + ")"
+    elif len(cond_layer) > 1: # in else if case
+        for condition in cond_layer[:-1]:
+            if tran_layer == "":
+                tran_layer = "(" + condition + ")"
+            else:
+                tran_layer = tran_layer + " || (" + condition + ")"
+        
+        tran_layer = "!(" + tran_layer + ") && (" + cond_layer[-1] + ")"
+    else: # in if case
+        tran_layer = cond_layer[0]
+    
+    if transition == "":
+        return rem_parens("(" + tran_layer + ")")
+    else:
+        return rem_parens(transition + " && (" +  tran_layer + ")")
 
 def get_transitions(state, ns):
     with open(TMP + state + SV, "r") as f:
         lines = f.readlines()
 
+    conditions = []
+    transitions = []
+    i = 0
+    while i < len(lines):
+        d = get_depth(lines[i])
 
-    for i, line in enumerate(lines):
-        if "if" in line:
-            cond = get_condition(i, lines)
-            # get_transition(ns, line)
+        if "else if" in lines[i]:
+            cond, i = get_condition(i, lines)
+            if d < len(conditions): # reaching else if on this level after if
+                conditions[d].append(cond)
+            else: # reaching else if before if condition
+                print("should not get here")
 
+        elif "if" in lines[i]:
+            cond, i = get_condition(i, lines)
+            if d < len(conditions): # reaching if on this level again, overwrite
+                conditions[d] = [cond]
+            else: # reaching if on this level for the first time
+                conditions.append([cond])
+
+        elif "else" in lines[i]:
+            cond, i = "", i+1
+            if d < len(conditions): # reaching else on this level after if
+                conditions[d].append(cond)
+            else: # reaching else before if condition
+                print("should not get here")
+
+        elif ns in lines[i]:
+            transition = ""
+            for layer in range(d):
+                transition = format_transition(conditions[layer], transition)
+            
+            next_state, i = get_next_state(i, lines)
+            transitions.append((next_state,transition))
+        else:
+            i += 1
+    
+    return transitions
+
+def save_transitions(state, cs, transitions):
+    with open(TMP + "_" + state + SV, "w") as f:
+        needs_else = True
+        for t in transitions:
+
+            if cs == t[0]:
+                t = (state, t[1])
+                needs_else = False
+            
+            if t[1] == "":
+                needs_else = False
+
+            f.write(str(t) + "\n")
+
+        if needs_else:
+            if len(transitions) > 1:
+                else_case = (state, "otherwise")
+            else:
+                new_trans = rem_parens("!(" + transitions[0][1] + ")")
+                else_case = (state, new_trans)
+            f.write(str(else_case) + "\n")
 
 ################################################################################
 
@@ -219,7 +403,7 @@ def get_transitions(state, ns):
 if not os.path.exists(FILENAME):
     print("this file does not exist in the directory you are calling it from")
 
-# setup()
+setup()
 
 # strip file of comments for performance
 commentless_file(FILENAME)
@@ -231,24 +415,28 @@ with open(WOC, "r") as f:
 # get state names and variable names
 states, state_vars = get_states(lines)
 states.append("default")
-# print(states)
 
-# get always comb blocks
+# get always_comb blocks
 count = get_always_combs(lines)
 
 # define name for current and next states
 cs, ns = get_vars(count)
-# print(cs)
-# print(ns)
 
+# determine which always_comb block has state transitions
 stf = get_stf(count, ns)
-# print(stf)
 
 with open(ALWAYS + str(stf) + SV, "r") as f:
     lines = f.readlines()
 
-# get_state_blocks(states, lines)
+# create formatted file for each state containing state transtions
+get_state_blocks(states, lines)
 
-get_transitions("IGNORE1", ns)
+# get transitions from every state and save it in a file
+for state in states:
+    if state != "default":
+        transitions = get_transitions(state, ns)
+        save_transitions(state, cs, transitions)
+
+drawPics(states)
 
 # cleanup()
