@@ -14,6 +14,7 @@ list them below:
 
 - all if/else if/else statements NEED a "begin" and "end". (I know one-liners
 are possible, but the parser I created isn't currently capable of doing so)
+- works with multiple always_comb blocks, but NOT multiple FSMs in the same file
 
 ## Build/Run:
 

@@ -2,7 +2,7 @@ import argparse
 import math
 import os
 import shutil
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFont
 
 ''' steps
 
@@ -15,9 +15,11 @@ be able to parse file and get always_comb begin ....
 # get file name
 parser = argparse.ArgumentParser(description='sv2fsm: automatically generates a FSM diagram from SystemVerilog code.')
 parser.add_argument('--filename', type=str, help='this is the file you want to create a FSM from.')
+parser.add_argument('--image', nargs='?', type=bool, const=True, default=False, help='this determines whether or not you generate an image.')
 args = parser.parse_args()
 
 FILENAME = args.filename
+IMAGE = args.image
 TMP = "tmp/"
 WOC = TMP + "woc_" + FILENAME
 ALWAYS = TMP + "always_comb"
@@ -399,6 +401,81 @@ def save_transitions(state, cs, transitions):
 
 ################################################################################
 
+def draw_circle(draw, x, y, r):
+    leftUpPoint = (x-r, y-r)
+    rightDownPoint = (x+r, y+r)
+    twoPointList = [leftUpPoint, rightDownPoint]
+    draw.ellipse(twoPointList, fill=(255,0,0,255))
+
+def drawPics(states):
+    # size of image
+    w = 20000
+    h = 20000
+    canvas = (w, h)
+    states = states[:-1]
+
+    # scale ration
+    scale = 5
+    thumb = canvas[0]/scale, canvas[1]/scale
+
+    # init canvas
+    im = Image.new('RGBA', canvas, (255, 255, 255, 255))
+    draw = ImageDraw.Draw(im)
+
+    degree = 0.0
+    greater_r = w/3
+    lesser_r = greater_r/4
+    count = len(states)
+
+    longest = 0
+    for state in states:
+        if len(state) > longest:
+            longest = len(state)
+
+    for i in range(count):
+        state = states[i]
+        with open(TMP+"_"+state+SV, "r") as f:
+            lines = f.readlines()
+
+        x = w/2 + greater_r*math.cos(degree)
+        y = h/2 + greater_r*math.sin(degree)
+
+        for line in lines:
+            tup = line.partition(",")
+            dst = tup[0].partition("'")[2].partition("'")[0]
+            if dst == state:
+                print("skipping same state transitions for now")
+            else:
+                j = i
+                while states[j%count] != dst:
+                    j += 1
+                displace = j-i
+                nx = w/2 + greater_r*math.cos(degree+2*displace*math.pi/count)
+                ny = h/2 + greater_r*math.sin(degree+2*displace*math.pi/count)
+                draw.line([(x, y), (nx, ny)], fill=(0,0,0,255),width=10)
+        
+        degree += 2*math.pi/count
+
+    for i in range(count):
+        state = states[i]
+        x = w/2 + greater_r*math.cos(degree)
+        y = h/2 + greater_r*math.sin(degree)
+
+        draw_circle(draw, x, y, lesser_r)
+        size = math.floor(2*lesser_r/longest)
+        fnt = ImageFont.truetype("monospace.ttf", size)
+
+        draw.text((x-len(state)*size/3.5, y-size/1.5), text=state, font=fnt, fill=(255,255,255,255), align="center")
+        degree += 2*math.pi/count
+
+    # make thumbnail
+    im.thumbnail(thumb)
+
+    # save image
+    im.save('im.png')
+
+################################################################################
+
 # make sure file exists
 if not os.path.exists(FILENAME):
     print("this file does not exist in the directory you are calling it from")
@@ -415,6 +492,7 @@ with open(WOC, "r") as f:
 # get state names and variable names
 states, state_vars = get_states(lines)
 states.append("default")
+print(states)
 
 # get always_comb blocks
 count = get_always_combs(lines)
@@ -424,6 +502,8 @@ cs, ns = get_vars(count)
 
 # determine which always_comb block has state transitions
 stf = get_stf(count, ns)
+
+print((cs, ns, stf))
 
 with open(ALWAYS + str(stf) + SV, "r") as f:
     lines = f.readlines()
@@ -437,6 +517,7 @@ for state in states:
         transitions = get_transitions(state, ns)
         save_transitions(state, cs, transitions)
 
-drawPics(states)
+if IMAGE:
+    drawPics(states)
 
 # cleanup()
