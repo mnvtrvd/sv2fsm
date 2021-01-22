@@ -171,13 +171,47 @@ def get_state_blocks(states, lines):
             if parens == 0:
                 with open(TMP + cs + SV, "w") as f:
                     f.write(block)
-                print(block)
                 block = ""
                 cs = ""
-        
-        # print((parens, len(block), line))
 
+def get_condition(index, lines):
+    cond = ""
+    parens = 0
+    found = False
+    while parens != 0 or not found:
+        line = lines[index].strip()
+        for c in line:
+            if c == "(":
+                if not found:
+                    found = True
+                parens += 1
+            elif c == ")":
+                parens -= 1
+
+            if found:
+                if parens == 0:
+                    break
+                else:
+                    cond += c
+
+        index += 1
     
+    return cond[1:]
+
+
+# def get_transition(ns, line):
+    # print(ns)
+
+def get_transitions(state, ns):
+    with open(TMP + state + SV, "r") as f:
+        lines = f.readlines()
+
+
+    for i, line in enumerate(lines):
+        if "if" in line:
+            cond = get_condition(i, lines)
+            # get_transition(ns, line)
+
 
 ################################################################################
 
@@ -185,7 +219,7 @@ def get_state_blocks(states, lines):
 if not os.path.exists(FILENAME):
     print("this file does not exist in the directory you are calling it from")
 
-setup()
+# setup()
 
 # strip file of comments for performance
 commentless_file(FILENAME)
@@ -197,23 +231,24 @@ with open(WOC, "r") as f:
 # get state names and variable names
 states, state_vars = get_states(lines)
 states.append("default")
-print(states)
+# print(states)
 
 # get always comb blocks
 count = get_always_combs(lines)
 
 # define name for current and next states
 cs, ns = get_vars(count)
-print(cs)
-print(ns)
+# print(cs)
+# print(ns)
 
 stf = get_stf(count, ns)
-print(stf)
+# print(stf)
 
 with open(ALWAYS + str(stf) + SV, "r") as f:
     lines = f.readlines()
 
-get_state_blocks(states, lines)
+# get_state_blocks(states, lines)
 
+get_transitions("IGNORE1", ns)
 
 # cleanup()
