@@ -14,26 +14,48 @@ be able to parse file and get always_comb begin ....
 
 # get file name
 parser = argparse.ArgumentParser(description='sv2fsm: automatically generates a FSM diagram from SystemVerilog code.')
-parser.add_argument('--filename', type=str, help='this is the file you want to create a FSM from.')
+parser.add_argument('--test', nargs='?', type=bool, const=True, default=False, help='this will run script on all test files.')
+parser.add_argument('--filename', type=str, default = "", help='this is the file you want to create a FSM from.')
 parser.add_argument('--image', nargs='?', type=bool, const=True, default=False, help='this determines whether or not you generate an image.')
 args = parser.parse_args()
 
 FILENAME = args.filename
 IMAGE = args.image
+
 TMP = "tmp/"
+OUT = "out/"
+TEST = "test/"
+SV = ".sv"
+
+PATH = TEST + FILENAME
 WOC = TMP + "woc_" + FILENAME
 ALWAYS = TMP + "always_comb"
-SV = ".sv"
+
+ERR = False
 
 def setup():
     if os.path.isdir(os.getcwd() + "/tmp"):
         cleanup()
 
     os.mkdir(TMP)
+    ERR = False
 
 def cleanup():
     if os.path.isdir(os.getcwd() + "/tmp"):
         shutil.rmtree("tmp")
+
+def exception(s, code=-1):
+    if code == -1:
+        ERR = True
+        print("ERROR: " + s)
+        if not args.test:
+            cleanup()
+            exit()
+
+    if code == 0:
+        print("INFO: " + s)
+    if code == 1:
+        print("NOTE: " + s)
 
 ################################################################################
 
@@ -47,6 +69,16 @@ def get_depth(line):
     
     return tabs
 
+def found(word, line):
+    spl = line.partition(word)
+    if spl[1] == "":
+        return False
+    if (spl[0] != "") and (spl[0][-1].isalpha()):
+        return False
+    if (spl[2] != "") and (spl[2][0].isalpha()):
+        return False
+    return True
+
 def get_equiv_parens(line):
     equiv = ""
 
@@ -59,7 +91,7 @@ def get_equiv_parens(line):
 def rem_parens(line):
     equiv = get_equiv_parens(line)
     if len(equiv)%2 == 1:
-        print("parens don't match at start")
+        exception("parens don't match at start")
     spl = equiv.partition("(())")
 
     while spl[1] != "":
@@ -78,7 +110,7 @@ def rem_parens(line):
         line = nline
         equiv = get_equiv_parens(line)
         if len(equiv)%2 == 1:
-            print("parens don't match")
+            exception("parens don't match")
         spl = equiv.partition("(())")
     
     return line
@@ -112,7 +144,7 @@ def rem_comments(line, multiline):
                 return (line, False) # return original line
 
 def commentless_file(filename):
-    with open(FILENAME, "r") as f:
+    with open(PATH, "r") as f:
         lines = f.readlines()
 
     with open(WOC, "w") as f:
@@ -155,9 +187,9 @@ def get_always_combs(lines):
             comb = line
 
         if comb != "":
-            if "begin" in line:
+            if found("begin", line):
                 parens += 1
-            if ("end" in line) and not ("endcase" in line):
+            if found("end", line):
                 parens -= 1
 
             if comb != line:
@@ -168,10 +200,12 @@ def get_always_combs(lines):
                     f.write(comb)
                 count += 1
                 comb = ""
+        
+        # print((parens, len(comb), line))
     
     return count
 
-def get_vars(count):
+def get_vars(count, state_vars):
     cs = ""
     ns = ""
     for i in range(count):
@@ -208,7 +242,7 @@ def get_stf(count, ns):
 def format_states(states):
     for state in states:
         if not os.path.exists(TMP + state + SV):
-            print(TMP + state + SV + " does not exist")
+            exception(TMP + state + SV + " does not exist", 1)
             break
 
         with open(TMP + state + SV, "r") as f:
@@ -230,12 +264,13 @@ def format_states(states):
         with open(TMP + state + SV, "w") as f:
             parens = 0
             for line in lines:
-                if "begin" in line:
+                if found("begin", line):
                     parens += 1
-                elif "end" in line:
+                elif found("end", line):
                     parens -= 1
                 else:
                     f.write("\t"*parens + line)
+                # print((state, parens, line))
 
 def get_state_blocks(states, lines):
     block = ""
@@ -245,14 +280,14 @@ def get_state_blocks(states, lines):
     for line in lines:
         if block == "":
             for state in states:
-                if state in line:
+                if state == line.partition(":")[0].strip():
                     cs = state
                     block = line.lstrip()
 
         if block != "":
-            if "begin" in line:
+            if found("begin", line):
                 parens += 1
-            if "end" in line:
+            if found("end", line):
                 parens -= 1
 
             if parens == 0:
@@ -262,6 +297,8 @@ def get_state_blocks(states, lines):
                 cs = ""
             elif block != line.lstrip():
                 block = block + line.lstrip()
+
+        # print((cs, parens, line))
 
     format_states(states)
 
@@ -349,7 +386,7 @@ def get_transitions(state, ns):
             if d < len(conditions): # reaching else if on this level after if
                 conditions[d].append(cond)
             else: # reaching else if before if condition
-                print("should not get here")
+                exception("should not get here")
 
         elif "if" in lines[i]:
             cond, i = get_condition(i, lines)
@@ -363,7 +400,7 @@ def get_transitions(state, ns):
             if d < len(conditions): # reaching else on this level after if
                 conditions[d].append(cond)
             else: # reaching else before if condition
-                print("should not get here")
+                exception("should not get here")
 
         elif ns in lines[i]:
             transition = ""
@@ -394,6 +431,9 @@ def save_transitions(state, cs, transitions):
         if needs_else:
             if len(transitions) > 1:
                 else_case = (state, "otherwise")
+            elif len(transitions) == 0:
+                exception("are you sure all case and conditional statements have a begin/end?")
+                return
             else:
                 new_trans = rem_parens("!(" + transitions[0][1] + ")")
                 else_case = (state, new_trans)
@@ -444,7 +484,7 @@ def drawPics(states):
             tup = line.partition(",")
             dst = tup[0].partition("'")[2].partition("'")[0]
             if dst == state:
-                print("skipping same state transitions for now")
+                exception("skipping same state transitions for now", 1)
             else:
                 j = i
                 while states[j%count] != dst:
@@ -463,7 +503,7 @@ def drawPics(states):
 
         draw_circle(draw, x, y, lesser_r)
         size = math.floor(2*lesser_r/longest)
-        fnt = ImageFont.truetype("monospace.ttf", size)
+        fnt = ImageFont.truetype("lib/monospace.ttf", size)
 
         draw.text((x-len(state)*size/3.5, y-size/1.5), text=state, font=fnt, fill=(255,255,255,255), align="center")
         degree += 2*math.pi/count
@@ -472,52 +512,69 @@ def drawPics(states):
     im.thumbnail(thumb)
 
     # save image
-    im.save('im.png')
+    im.save(OUT + FILENAME[:-3] + '.png')
 
 ################################################################################
 
-# make sure file exists
-if not os.path.exists(FILENAME):
-    print("this file does not exist in the directory you are calling it from")
+def main():
+    # make sure file exists
+    if not os.path.exists(PATH):
+        exception("this file does not exist in the directory you are calling it from")
 
-setup()
+    setup()
 
-# strip file of comments for performance
-commentless_file(FILENAME)
+    # strip file of comments for performance
+    commentless_file(PATH)
 
-# get lines in file
-with open(WOC, "r") as f:
-    lines = f.readlines()
+    # get lines in file
+    with open(WOC, "r") as f:
+        lines = f.readlines()
 
-# get state names and variable names
-states, state_vars = get_states(lines)
-states.append("default")
-print(states)
+    # get state names and variable names
+    states, state_vars = get_states(lines)
+    states.append("default")
+    print(states)
 
-# get always_comb blocks
-count = get_always_combs(lines)
+    # get always_comb blocks
+    count = get_always_combs(lines)
 
-# define name for current and next states
-cs, ns = get_vars(count)
+    # define name for current and next states
+    cs, ns = get_vars(count, state_vars)
 
-# determine which always_comb block has state transitions
-stf = get_stf(count, ns)
+    # determine which always_comb block has state transitions
+    stf = get_stf(count, ns)
 
-print((cs, ns, stf))
+    print((cs, ns, stf))
 
-with open(ALWAYS + str(stf) + SV, "r") as f:
-    lines = f.readlines()
+    with open(ALWAYS + str(stf) + SV, "r") as f:
+        lines = f.readlines()
 
-# create formatted file for each state containing state transtions
-get_state_blocks(states, lines)
+    # create formatted file for each state containing state transtions
+    get_state_blocks(states, lines)
 
-# get transitions from every state and save it in a file
-for state in states:
-    if state != "default":
-        transitions = get_transitions(state, ns)
-        save_transitions(state, cs, transitions)
+    # get transitions from every state and save it in a file
+    for state in states:
+        if state != "default":
+            transitions = get_transitions(state, ns)
+            save_transitions(state, cs, transitions)
 
-if IMAGE:
-    drawPics(states)
+    if ERR:
+        cleanup()
+        return
 
-# cleanup()
+    if IMAGE:
+        drawPics(states)
+
+    cleanup()
+
+if args.test:
+    i = 0
+    while True:
+        FILENAME = "test"+str(i)+SV
+        PATH = TEST + FILENAME
+        WOC = TMP + "woc_" + FILENAME
+        ALWAYS = TMP + "always_comb"
+        main()
+        i += 1
+else:
+    main()
