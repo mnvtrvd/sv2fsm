@@ -35,14 +35,17 @@ ERR = False
 
 def setup():
     if os.path.isdir(os.getcwd() + "/tmp"):
-        cleanup()
+        # cleanup()
+        if os.path.isdir(os.getcwd() + "/tmp"):
+            shutil.rmtree("tmp")
 
     os.mkdir(TMP)
     ERR = False
 
 def cleanup():
-    if os.path.isdir(os.getcwd() + "/tmp"):
-        shutil.rmtree("tmp")
+    print("cleaning up")
+    # if os.path.isdir(os.getcwd() + "/tmp"):
+    #     shutil.rmtree("tmp")
 
 def exception(s, code=-1):
     if code == -1:
@@ -91,7 +94,9 @@ def get_equiv_parens(line):
 def rem_parens(line):
     equiv = get_equiv_parens(line)
     if len(equiv)%2 == 1:
-        exception("parens don't match at start")
+        # exception("parens don't match at start: " + equiv, 1)
+        line = line + ")"
+        equiv = equiv + ")"
     spl = equiv.partition("(())")
 
     while spl[1] != "":
@@ -110,7 +115,7 @@ def rem_parens(line):
         line = nline
         equiv = get_equiv_parens(line)
         if len(equiv)%2 == 1:
-            exception("parens don't match")
+            exception("parens don't match: " + equiv, 1)
         spl = equiv.partition("(())")
     
     return line
@@ -367,9 +372,9 @@ def format_transition(cond_layer, transition):
         tran_layer = cond_layer[0]
     
     if transition == "":
-        return rem_parens("(" + tran_layer + ")")
+        return "(" + tran_layer + ")"
     else:
-        return rem_parens(transition + " && (" +  tran_layer + ")")
+        return transition + " && (" +  tran_layer + ")"
 
 def get_transitions(state, ns):
     with open(TMP + state + SV, "r") as f:
@@ -412,32 +417,57 @@ def get_transitions(state, ns):
         else:
             i += 1
     
-    return transitions
+    return combine_transitions(transitions)
+
+def combine_transitions(transitions):
+    combined = {}
+    for c, t in transitions:
+        if c in combined:
+            combined[c] = combined[c] + " || (" + t
+        elif t != "":
+            combined[c] = "(" + t + ")"
+        else:
+            combined[c] = ""
+    
+    return combined
 
 def save_transitions(state, cs, transitions):
     with open(TMP + "_" + state + SV, "w") as f:
         needs_else = True
-        for t in transitions:
-
-            if cs == t[0]:
-                t = (state, t[1])
+        for s in transitions:
+            t = transitions[s]
+            if s == state:
                 needs_else = False
-            
-            if t[1] == "":
+                if len(transitions) > 2:
+                    exception("reducing " + state + "->" + state + " to 'else'", 0)
+                    t = "otherwise"
+
+            if cs == s:
+                s = state
                 needs_else = False
 
-            f.write(str(t) + "\n")
+            if t == "":
+                needs_else = False
+
+            f.write(s + ", " + rem_parens(t) + "\n")
 
         if needs_else:
             if len(transitions) > 1:
-                else_case = (state, "otherwise")
+                if state not in transitions:
+                    else_case = (state, "otherwise")
+                else:
+                    return
             elif len(transitions) == 0:
                 exception("are you sure all case and conditional statements have a begin/end?")
                 return
             else:
-                new_trans = rem_parens("!(" + transitions[0][1] + ")")
+                s = list(transitions.keys())[0]
+                t = transitions[s]
+                if t == "":
+                    return
+                new_trans = rem_parens("!(" + t + ")")
                 else_case = (state, new_trans)
-            f.write(str(else_case) + "\n")
+            f.write(else_case[0] + ", " + else_case[1] + "\n")
 
 ################################################################################
 
@@ -481,10 +511,11 @@ def drawPics(states):
         y = h/2 + greater_r*math.sin(degree)
 
         for line in lines:
-            tup = line.partition(",")
-            dst = tup[0].partition("'")[2].partition("'")[0]
+            tup = line.partition(", ")
+            dst = tup[0]
+            tran = tup[2]
             if dst == state:
-                exception("skipping same state transitions for now", 1)
+                exception("skipping same state transitions for now", 2)
             else:
                 j = i
                 while states[j%count] != dst:
@@ -544,7 +575,7 @@ def main():
     # determine which always_comb block has state transitions
     stf = get_stf(count, ns)
 
-    print((cs, ns, stf))
+    # print((cs, ns, stf))
 
     with open(ALWAYS + str(stf) + SV, "r") as f:
         lines = f.readlines()
@@ -557,10 +588,9 @@ def main():
         if state != "default":
             transitions = get_transitions(state, ns)
             save_transitions(state, cs, transitions)
-
-    if ERR:
-        cleanup()
-        return
+            if ERR:
+                cleanup()
+                return
 
     if IMAGE:
         drawPics(states)
