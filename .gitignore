@@ -3,6 +3,9 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# Mac specific
+.DS_Store
+
 # Project specific
 tmp/
 out/
