@@ -46,35 +46,44 @@ def run(path):
 
     draw_fsm.drawer(states, "out/" + FILENAME[:-3] + '.png', IMAGE, CIRCULAR)
 
-    print("finished", path, ": it took", time.time()-start, "secs")
+    print("finished", path, ": it took", round(time.time()-start, 2), "secs")
     cleanup()
 
 # get file name
 parser = argparse.ArgumentParser(description='sv2fsm: automatically generates a FSM diagram from SystemVerilog code.')
 parser.add_argument('--test', nargs='?', type=int, const=-1, default=-2, help='this will run script on all test files.')
+parser.add_argument('--stress', nargs='?', type=int, const=10, default=1, help='this will run the given file(s) many times.')
 parser.add_argument('--filename', type=str, default = "", help='this is the file you want to create a FSM from.')
 parser.add_argument('--image', nargs='?', type=bool, const=True, default=False, help='this determines whether or not you generate an image.')
 parser.add_argument('--circular', nargs='?', type=bool, const=True, default=False, help='this generates a circular graph (may have crossing), instead of the default planar (no line crossings).')
 args = parser.parse_args()
 
 TEST = args.test
+STRESS = args.stress
 FILENAME = args.filename
 IMAGE = args.image
 CIRCULAR = args.circular
 
-PATH = FILENAME
+for i in range(STRESS):
+    if i == STRESS - 1:
+        IMAGE = args.image
+    else:
+        IMAGE = False
+    FILENAME = args.filename
 
-if TEST == -2:
-    run(FILENAME)
-if TEST == -1:
-    i = 0
-    FILENAME = "test"+str(i)+".sv"
-    while os.path.exists("test/" + FILENAME):
-        i += 1
-        if (i == 13) or (i == 9) or (i == 8):
-            continue
-        run("test/" + FILENAME)
+    PATH = FILENAME
+
+    if TEST == -2:
+        run(FILENAME)
+    if TEST == -1:
+        i = 0
         FILENAME = "test"+str(i)+".sv"
-else:
-    FILENAME = "test"+str(TEST)+".sv"
-    run("test/" + FILENAME)
+        while os.path.exists("test/" + FILENAME):
+            i += 1
+            if (i == 13) or (i == 9) or (i == 8):
+                continue
+            run("test/" + FILENAME)
+            FILENAME = "test"+str(i)+".sv"
+    else:
+        FILENAME = "test"+str(TEST)+".sv"
+        run("test/" + FILENAME)

@@ -14,6 +14,8 @@ BLUE = (0,0,255,255)
 
 W = 8000
 H = 8000
+R_OUT = round(W/3)
+R_STATE = round(R_OUT/10)
 
 # https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
 def get_intersection(edge1, edge2):
@@ -84,15 +86,15 @@ def get_angle(x1, y1, x2, y2):
     return delta
 
 # https://www.eecs.umich.edu/courses/eecs380/HANDOUTS/PROJ2/InsidePoly.html#:~:text=To%20determine%20the%20status%20of,point%20is%20outside%20the%20polygon.
-def in_face(face, pos, state):
+def in_face(face, pos, x, y):
     angle = 0
     count = len(face)
 
     for i in range(count):
-        x1 = pos[face[i]][0] - pos[state][0]
-        y1 = pos[face[i]][1] - pos[state][1]
-        x2 = pos[face[(i+1)%count]][0] - pos[state][0]
-        y2 = pos[face[(i+1)%count]][1] - pos[state][1]
+        x1 = pos[face[i]][0] - x
+        y1 = pos[face[i]][1] - y
+        x2 = pos[face[(i+1)%count]][0] - x
+        y2 = pos[face[(i+1)%count]][1] - y
         angle += get_angle(x1, y1, x2, y2)
     
     return abs(angle) >= math.pi
@@ -246,15 +248,16 @@ def get_points(edges):
 
     return points
 
-def get_values(outer, inner, r, center=(W,H), offset=0, r_in=0, skip=False):
+def get_values(outer, inner, center=(W,H), offset=0, r_in=0, skip=False):
     states = outer + inner
-    pos = get_xy(r, outer)
+    pos = get_xy(R_OUT, outer)
     if skip:
         for istate in inner:
             pos[istate] = (round(W/2), round(H/2))
     else:
-        while 2**r_in < len(inner):
-            r_in += 1
+        if r_in == 0:
+            while 2**r_in < len(inner):
+                r_in += 1
         pos.update(get_xy(r_in, inner, center[0], center[1], offset))
     edges = get_edges(states, pos)
     points = get_points(edges)
@@ -332,7 +335,7 @@ def get_edge_len(edges, outer):
 
 ################################################################################
 
-def move_inwards(r, pos, edges, points, outer, inner):
+def move_inwards(pos, edges, points, outer, inner):
     start = time.time()
     states = outer + inner
     counts = get_edge_count(states, edges, False)
@@ -357,17 +360,17 @@ def move_inwards(r, pos, edges, points, outer, inner):
         outer.remove(min_edges[0])
 
         # update position of that node
-        pos, edges, points = get_values(outer, inner, r, skip=True)
+        pos, edges, points = get_values(outer, inner, skip=True)
 
         if time.time() - start > 10:
             print("WARNING: exceeded maximum runtime of 10 secs")
             break
     
-    return get_values(outer, inner, r)
+    return get_values(outer, inner)
 
-def decrowd(r, outer, inner):
+def decrowd(outer, inner):
     if len(outer) < len(inner):
-        _, _, points = get_values(inner, outer, r)
+        _, _, points = get_values(inner, outer)
         if len(points) == 0:
             # swap the two lists while maintaining pointer
             states = outer + inner
@@ -381,9 +384,9 @@ def decrowd(r, outer, inner):
                 if state not in outer:
                     inner.append(state)
 
-    return get_values(outer, inner, r)
+    return get_values(outer, inner)
 
-def recenter_inner(r, pos, edges, outer, inner):
+def recenter_inner(pos, edges, outer, inner):
     trans = get_transitions(edges, outer)
     chains = rem_chains(trans)
 
@@ -407,21 +410,17 @@ def recenter_inner(r, pos, edges, outer, inner):
         _, face = get_longest(faces)
         new_center = get_centroid(face, pos)
 
-    pface = []
-    for state in face:
-        pface.append(pos[state])
+    pos, edges, points = get_values(outer, inner, new_center)
+    return pos, edges, points, new_center, face
 
-    pos, edges, points = get_values(outer, inner, r, new_center)
-    return pos, edges, points, new_center
-
-def rotate_inner(r, new_center, outer, inner):
+def rotate_inner(new_center, r_in, outer, inner):
     best = 0
-    _, edges, points = get_values(outer, inner, r, new_center, best)
+    _, edges, points = get_values(outer, inner, new_center, offset=best, r_in=r_in)
     if len(inner) > 1:
         edge_sum = get_edge_len(edges, outer)
         intersections = len(points)
         for offset in range(1, 360, 1):
-            _, edges, points = get_values(outer, inner, r, new_center, offset)
+            _, edges, points = get_values(outer, inner, new_center, offset=offset, r_in=r_in)
             if len(points) <= intersections:
                 edge_len = get_edge_len(edges, outer)
                 if (len(points) < intersections) or (edge_len < edge_sum):
@@ -429,25 +428,36 @@ def rotate_inner(r, new_center, outer, inner):
                     edge_sum = edge_len
                     intersections = len(points)
 
-    pos, edges, points = get_values(outer, inner, r, new_center, best)
+    pos, edges, points = get_values(outer, inner, new_center, offset=best, r_in=r_in)
     return pos, edges, points, best
 
-def resize_inner(r_out, new_center, offset, outer, inner):
+def resize_inner(new_center, face, outer, inner):
     r_in = 0
-    pos, edge, points = get_values(outer, inner, r_out, new_center, offset)
+    states = outer + inner
+    pos, edge, points = get_values(outer, inner, new_center)
 
     if len(inner) > 1:
         while 2**r_in < len(inner):
             r_in += 1
         
-        intersections = len(points)
-        while len(points) <= intersections:
-            r_in += 1
-            pos, edge, points = get_values(outer, inner, r_out, new_center, offset, r_in)
+        while (r_in < W/2) and (r_in < H/2):
+            r_in += 10
+            pos, edge, points = get_values(outer, inner, new_center, r_in=r_in)
+            
+            for angle in range(0, 360, 10):
+                x = new_center[0]/2 + r_in*math.cos(angle)
+                y = new_center[1]/2 + r_in*math.sin(angle)
+                within = in_face(face, pos, x, y)
+                if not within:
+                    if r_in > R_STATE:
+                        r_in = r_in - R_STATE
 
-        r_in -= 1
-        pos, edge, points = get_values(outer, inner, r_out, new_center, offset, round(r_in/2))
-        
+                    r_in = r_in*0.8
+                    
+                    pos, edge, points = get_values(outer, inner, new_center, r_in=r_in)
+                    return pos, edge, points, r_in
+
+    pos, edge, points = get_values(outer, inner, new_center)
     return pos, edge, points, r_in
 
 def swap_inwards(pos, edges, points, outer, inner):
@@ -479,25 +489,18 @@ def swap_inwards(pos, edges, points, outer, inner):
     
     return pos, edges, points
 
-def rearrange_states(r, pos, edges, points, states):
+def rearrange_states(pos, edges, points, states):
     outer = states
     inner = []
-    faces = []
 
-    pos, edges, points = move_inwards(r, pos, edges, points, outer, inner)
-    # if len(points) > 0: print("step1:", points)
-    pos, edges, points = decrowd(r, outer, inner)
-    # if len(points) > 0: print("step2:", points)
-    pos, edges, points, new_center = recenter_inner(r, pos, edges, outer, inner)
-    # if len(points) > 0: print("step3:", points)
-    pos, edges, points, offset = rotate_inner(r, new_center, outer, inner)
-    # if len(points) > 0: print("step4:", points)
-    pos, edges, points, r_in = resize_inner(r, new_center, offset, outer, inner)
-    # if len(points) > 0: print("step5:", points)
+    pos, edges, points = move_inwards(pos, edges, points, outer, inner)
+    pos, edges, points = decrowd(outer, inner)
+    pos, edges, points, new_center, face = recenter_inner(pos, edges, outer, inner)
+    pos, edges, points, r_in = resize_inner(new_center, face, outer, inner)
+    pos, edges, points, offset = rotate_inner(new_center, r_in, outer, inner)
     pos, edges, points = swap_inwards(pos, edges, points, outer, inner)
-    if len(points) > 0: print("step6:", points)
 
-    return pos, edges, points
+    return pos, edges, points, new_center
 
 ################################################################################
 
@@ -520,20 +523,20 @@ def draw_edges(draw, edges):
         color = WHITE if DARK else BLACK
         draw.line(edges[edge], fill=color, width=10)
 
-def draw_states(draw, r, pos):
+def draw_states(draw, pos):
     for state in pos:
         x = pos[state][0]
         y = pos[state][1]
-        draw_circle(draw, x, y, r/5)
+        draw_circle(draw, x, y, R_STATE)
 
-def draw_text(draw, r, pos):
+def draw_text(draw, pos):
     count = len(pos)
 
     states = list(pos.keys())
     longest, _ = get_longest(states)
 
     for state in pos:
-        size = math.floor(r/2/longest)
+        size = math.floor(R_OUT/4/longest)
 
         x = pos[state][0] - len(state)*size/3.5
         y = pos[state][1] - size/1.5
@@ -544,20 +547,21 @@ def draw_text(draw, r, pos):
         draw.text((x, y), text=state, font=fnt, fill=color)
 
 def draw_fsm(draw, states, circular=False):
-    r = W/3
+    r_in = 0
+    center = (0,0)
 
     planar = is_planar_graph(states)
-    pos = get_xy(r, states)
+    pos = get_xy(R_OUT, states)
     edges = get_edges(states, pos)
     points = get_points(edges)
 
     if (len(points) != 0) and planar and not circular:
-        pos, edges, points = rearrange_states(r, pos, edges, points, states)
+        pos, edges, points, center = rearrange_states(pos, edges, points, states)
 
     if draw != None:
         draw_edges(draw, edges)
-        draw_states(draw, r/2, pos)
-        draw_text(draw, r/2, pos)
+        draw_states(draw, pos)
+        draw_text(draw, pos)
         for point in points:
             draw_point(draw, point[0], point[1])
 
