@@ -131,7 +131,11 @@ def parse_always_combs(path):
                 count += 1
                 comb = ""
 
-    return count
+    if count == 0:
+        print("ERROR: this file does not contain any always_comb blocks")
+        exit()
+    else:
+        return count
 
 # figures out which always_comb block indicates state transitions
 def which_comb(ns):
@@ -148,6 +152,9 @@ def which_comb(ns):
         
         i += 1
         filename = TMP + "always" + str(i) + ".sv"
+    
+    print("ERROR: this file does not contain any always_comb blocks with state transitions")
+    exit()
 
 def get_states(path):
     with open(path, "r") as f:
@@ -172,7 +179,11 @@ def get_states(path):
     states = tmp[0].replace(" ", "").split(",")
     state_vars = tmp[2].replace(";", "").replace(" ", "").split(",")
 
-    return (states, state_vars)
+    if len(states) == 0:
+        print("ERROR: this file does not contain any enum to specify states")
+        exit()
+    else:
+        return (states, state_vars)
 
 def get_vars(count, state_vars):
     cs = ""
@@ -200,7 +211,11 @@ def get_vars(count, state_vars):
         i += 1
         filename = TMP + "always" + str(i) + ".sv"
     
-    return (cs, ns)
+    if (cs == "") or (ns == ""):
+        print("ERROR: could not locate current and/or next state variables")
+        exit()
+    else:
+        return (cs, ns)
 
 ################################################################################
 

@@ -49,10 +49,12 @@ def run(path):
             svp.save_transitions(state, cs, transitions)
             # print("finished getting transitions for " + state)
 
-    if IMAGE:
-        draw_fsm.drawer(states, "out/" + FILENAME[:-3] + '.png')
-        print("finished creating image")
+    draw_fsm.drawer(states, "out/" + FILENAME[:-3] + '.png', IMAGE)
 
+    if IMAGE:
+        # draw_fsm.graph_fsm(states, "out/" + FILENAME[:-3] + ".png")
+        print("finished creating image")
+    
     # print("finished " + path)
     cleanup()
 
@@ -75,6 +77,9 @@ if TEST == -1:
     i = 0
     FILENAME = "test"+str(i)+".sv"
     while os.path.exists("test/" + FILENAME):
+        if (i == 13) or (i == 9) or (i == 8):
+            i += 1
+            continue
         run("test/" + FILENAME)
         FILENAME = "test"+str(i)+".sv"
         i += 1

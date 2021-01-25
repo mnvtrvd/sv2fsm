@@ -14,7 +14,8 @@ list them below:
 
 - all case and conditional (if/else if/else) statements NEED a "begin" and "end". (I know one-liners
 are possible, but the parser I created isn't currently capable of doing so)
-- works with multiple always_comb blocks, but NOT multiple FSMs in the same file
+- must use enum to define state names and variables (apparently this isn't universal)
+- works with multiple always_comb blocks, but NOT multiple FSMs in the same file (only 1 enum)
 
 ## Build/Run:
 
