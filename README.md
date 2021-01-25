@@ -19,6 +19,6 @@ are possible, but the parser I created isn't currently capable of doing so)
 
 ## Build/Run:
 
-Simply run `python sv2fsm.py --filename "your_file.sv"` to generate the FSM.s
+Simply run `python sv2fsm.py --filename "your_file.sv"` to generate the FSM.
 
 ## Usage:

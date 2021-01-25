@@ -46,7 +46,10 @@ def get_intersection(edge1, edge2):
     else:
         return (False, [])
 
-def midpoint(x1, y1, x2, y2):
+def get_length(x1, y1, x2, y2):
+    return math.sqrt((x2-x1)**2 + (y2-y1)**2)
+
+def get_midpoint(x1, y1, x2, y2):
     x = (x2-x1)/2
     y = (y2-y1)/2
     return x, y
@@ -60,6 +63,41 @@ def get_longest(states):
             longest = state
     
     return length, longest
+
+def get_slope(edge):
+    x1 = edge[0][0]
+    y1 = edge[0][1]
+    x2 = edge[1][0]
+    y2 = edge[1][1]
+
+    return (y2-y1)/(x2-x1)
+
+def get_angle(x1, y1, x2, y2):
+    delta = math.atan2(y2, x2) - math.atan2(y1, x1)
+
+    while (delta > math.pi) or (delta < -math.pi):
+        if (delta < -math.pi):
+            delta += 2*math.pi
+        else:    
+            delta -= 2*math.pi
+
+    return delta
+
+# https://www.eecs.umich.edu/courses/eecs380/HANDOUTS/PROJ2/InsidePoly.html#:~:text=To%20determine%20the%20status%20of,point%20is%20outside%20the%20polygon.
+def in_face(face, pos, state):
+    angle = 0
+    count = len(face)
+
+    for i in range(count):
+        x1 = pos[face[i]][0] - pos[state][0]
+        y1 = pos[face[i]][1] - pos[state][1]
+        x2 = pos[face[(i+1)%count]][0] - pos[state][0]
+        y2 = pos[face[(i+1)%count]][1] - pos[state][1]
+        angle += get_angle(x1, y1, x2, y2)
+    
+    return abs(angle) >= math.pi
+
+################################################################################
 
 def is_planar_graph(states):
     fsm = nx.MultiDiGraph()
@@ -77,23 +115,7 @@ def is_planar_graph(states):
     is_planar, _ = nx.algorithms.planarity.check_planarity(fsm)
     return is_planar
 
-def get_slope(edge):
-    x1 = edge[0][0]
-    y1 = edge[0][1]
-    x2 = edge[1][0]
-    y2 = edge[1][1]
-
-    return (y2-y1)/(x2-x1)
-
-def get_angle(x1, y1, x2, y2):
-    delta = math.atan2(y2, x2) - math.atan2(y1, x1)
-    while (delta > math.pi):
-        delta -= 2*math.pi
-    while (delta < -math.pi):
-        delta += 2*math.pi
-
-    return delta
-    # return delta % 2*math.pi
+################################################################################
 
 def swap_nodes(pos, n1, n2, outer, inner):
     p1 = pos[n1]
@@ -112,25 +134,31 @@ def swap_nodes(pos, n1, n2, outer, inner):
         inner.remove(n1)
         inner.append(n2)
 
-    print("swapping " + n1 + " and " + n2)
     return pos
 
-def in_face(face, pos, state):
-    angle = 0
-    count = len(face)
+def rem_chains(trans):
+    done = False
+    chain = []
+    while not done:
+        single = []
+        for state in trans:
+            if len(trans[state]) == 1:
+                dst = trans[state][0]
+                trans[dst].remove(state)
+                trans[state] = []
+                single.append(state)
+                chain.append(state)
+        
+        for state in single:
+            del trans[state]
 
-    for i in range(count):
-        x1 = pos[face[i]][0] - pos[state][0]
-        y1 = pos[face[i]][1] - pos[state][1]
-        x2 = pos[face[(i+1)%count]][0] - pos[state][0]
-        y2 = pos[face[(i+1)%count]][1] - pos[state][1]
-        angle += get_angle(x1, y1, x2, y2)
-    
-    return abs(angle) >= math.pi
+        done = all(len(trans[state]) != 1 for state in trans)
+
+    return chain
 
 ################################################################################
 
-def get_xy(r, states, w=W, h=H):
+def get_xy(r, states, w=W, h=H, offset=0):
     pos = {}
     count = len(states)
     if count == 1:
@@ -139,7 +167,7 @@ def get_xy(r, states, w=W, h=H):
 
     for i in range(count):
         state = states[i]
-        degree = 2*i*math.pi/count
+        degree = 2*i*math.pi/count + offset
         x = w/2 + r*math.cos(degree)
         y = h/2 + r*math.sin(degree)
         pos[state] = (round(x), round(y))
@@ -160,7 +188,7 @@ def get_transitions(edges, states):
     
     return trans
 
-def get_edges(states, pos):
+def get_edges(states, pos, digraph=False):
     edges = {}
     count = len(states)
     for i in range(count):
@@ -173,7 +201,7 @@ def get_edges(states, pos):
             tup = line.partition(", ")
             dst = tup[0]
             tran = tup[2]
-            if dst != state:
+            if digraph or (dst != state):
                 if (state in pos) and (dst in pos):
                     edges[(state, dst)] = (pos[state], pos[dst])
             # else:
@@ -218,37 +246,17 @@ def get_points(edges):
 
     return points
 
-def get_values(outer, inner, r, center=(W,H), skip=False):
+def get_values(outer, inner, r, center=(W,H), offset=0, skip=False):
     states = outer + inner
     pos = get_xy(r, outer)
     if skip:
         for istate in inner:
             pos[istate] = (round(W/2), round(H/2))
     else:
-        pos.update(get_xy(r/5, inner, center[0], center[1]))
+        pos.update(get_xy(r/5, inner, center[0], center[1], offset))
     edges = get_edges(states, pos)
     points = get_points(edges)
     return pos, edges, points
-
-def rem_chains(trans):
-    done = False
-    chain = []
-    while not done:
-        single = []
-        for state in trans:
-            if len(trans[state]) == 1:
-                dst = trans[state][0]
-                trans[dst].remove(state)
-                trans[state] = []
-                single.append(state)
-                chain.append(state)
-        
-        for state in single:
-            del trans[state]
-
-        done = all(len(trans[state]) != 1 for state in trans)
-
-    return chain
 
 def get_faces(target, trans, outer):
     path = []
@@ -304,9 +312,25 @@ def get_centroid(face, pos):
     # multiplying by 2 to get bounding box it is center of
     return (round(2*x/len(face)), round(2*y/len(face)))
 
+def get_edge_len(edges, outer):
+    in_out_edges = []
+    edge_len = 0
+    for edge in edges:
+        src = edge[0]
+        dst = edge[1]
+        if ((src in outer) != (dst in outer)) and (edge not in in_out_edges):
+            in_out_edges.append(edge)
+            x1 = edges[edge][0][0]
+            y1 = edges[edge][0][1]
+            x2 = edges[edge][1][0]
+            y2 = edges[edge][1][1]
+            edge_len += get_length(x1, y1, x2, y2)
+    
+    return edge_len
+
 ################################################################################
 
-def rotate_inwards(r, pos, edges, points, outer, inner):
+def move_inwards(r, pos, edges, points, outer, inner):
     start = time.time()
     states = outer + inner
     counts = get_edge_count(states, edges, False)
@@ -409,6 +433,25 @@ def recenter_inner(r, pos, edges, outer, inner):
         _, face = get_longest(faces)
         new_center = get_centroid(face, pos)
 
+    pos, edges, points = get_values(outer, inner, r, new_center)
+    return pos, edges, points, new_center
+
+def rotate_inner(r, new_center, pos, edges, points, outer, inner):
+    if len(inner) > 1:
+        best = 0
+        edge_sum = get_edge_len(edges, outer)
+        intersections = len(points)
+        for offset in range(1, 360, 1):
+            _, edges, points = get_values(outer, inner, r, new_center, offset)
+            if len(points) <= intersections:
+                edge_len = get_edge_len(edges, outer)
+                if (len(points) < intersections) or (edge_len < edge_sum):
+                    best = offset
+                    edge_sum = edge_len
+                    intersections = len(points)
+
+        return get_values(outer, inner, r, new_center, best)
+
     return get_values(outer, inner, r, new_center)
 
 def rearrange_states(r, pos, edges, points, states):
@@ -416,9 +459,10 @@ def rearrange_states(r, pos, edges, points, states):
     inner = []
     faces = []
 
-    pos, edges, points = rotate_inwards(r, pos, edges, points, outer, inner)
+    pos, edges, points = move_inwards(r, pos, edges, points, outer, inner)
     pos, edges, points = decrowd(r, outer, inner)
-    pos, edges, points = recenter_inner(r, pos, edges, outer, inner)
+    pos, edges, points, new_center = recenter_inner(r, pos, edges, outer, inner)
+    pos, edges, points = rotate_inner(r, new_center, pos, edges, points, outer, inner)
     pos, edges, points = swap_inwards(pos, edges, points, outer, inner)
 
     return pos, edges, points
@@ -467,16 +511,15 @@ def draw_text(draw, r, pos):
 
         draw.text((x, y), text=state, font=fnt, fill=color)
 
-def draw_fsm(draw, states, rearrange=True):
+def draw_fsm(draw, states, circular=False):
     r = W/3
-    start = time.time()
 
     planar = is_planar_graph(states)
     pos = get_xy(r, states)
     edges = get_edges(states, pos)
     points = get_points(edges)
 
-    if (len(points) != 0) and planar and rearrange:
+    if (len(points) != 0) and planar and not circular:
         pos, edges, points = rearrange_states(r, pos, edges, points, states)
 
     if draw != None:
@@ -486,7 +529,7 @@ def draw_fsm(draw, states, rearrange=True):
         for point in points:
             draw_point(draw, point[0], point[1])
 
-def drawer(states, filename, gen_im=True):
+def drawer(states, filename, gen_im=True, circular=False):
     draw = None
     if gen_im:
         canvas = (W, H)
@@ -498,65 +541,8 @@ def drawer(states, filename, gen_im=True):
         im = Image.new('RGBA', canvas, background)
         draw = ImageDraw.Draw(im)
 
-    draw_fsm(draw, states)
+    draw_fsm(draw, states, circular)
 
     if gen_im:
-        # make thumbnail
         im.thumbnail(thumb)
-
-        # save image
         im.save(filename)
-
-################################################################################
-
-def graph_fsm(states, saveas):
-    fsm = nx.MultiDiGraph()
-
-    edges = {}
-    for src in states:
-        filename = "tmp/" + src + ".sv"
-        with open(filename, "r") as f:
-            lines = f.readlines()
-
-        for line in lines:
-            tup = line.partition(", ")
-            dst = tup[0]
-            transition = tup[2]
-            # if src == dst:
-            #     print("found self looping")
-            fsm.add_edge(src, dst, cond=transition)
-            edges[(src,dst)] = transition[:-1]
-
-    # print(fsm.edges["cond"])
-    for edge in edges:
-        print(edge, edges[edge])
-        # print(edge[0])
-        # edge_labels[edge] = edge[cond]
-    
-    # print(edges)
-
-    is_planar, _ = nx.algorithms.planarity.check_planarity(fsm)
-    longest, _ = get_longest(states)+2
-    node_size = 500*longest
-    # # print(saveas + " is " + str(is_planar))
-    # if is_planar:
-    #     pos = nx.planar_layout(fsm)
-    #     nx.draw_planar(fsm, with_labels=True, font_size=9, node_size=node_size/2)
-    #     nx.draw_networkx_edge_labels(fsm, edge_labels=edges, pos=pos)
-    # else:
-    pos = nx.circular_layout(fsm)
-    nx.draw_circular(fsm)#, with_labels=True, font_size=9, node_size=node_size/2)
-    nx.draw_networkx_edge_labels(fsm, edge_labels=edges, pos=pos)
-
-
-    # G = nx.petersen_graph()
-    # nx.draw_shell(G, nlist=[range(5, 10), range(5)], with_labels=True, font_weight='bold')    
-
-    # plt.show()
-    plt.savefig(saveas)
-    plt.clf()
-    
-    if DARK:
-        im = Image.open(saveas).convert('RGB')
-        im_invert = ImageOps.invert(im)
-        im_invert.save(saveas)
