@@ -246,14 +246,16 @@ def get_points(edges):
 
     return points
 
-def get_values(outer, inner, r, center=(W,H), offset=0, skip=False):
+def get_values(outer, inner, r, center=(W,H), offset=0, r_in=0, skip=False):
     states = outer + inner
     pos = get_xy(r, outer)
     if skip:
         for istate in inner:
             pos[istate] = (round(W/2), round(H/2))
     else:
-        pos.update(get_xy(r/5, inner, center[0], center[1], offset))
+        while 2**r_in < len(inner):
+            r_in += 1
+        pos.update(get_xy(r_in, inner, center[0], center[1], offset))
     edges = get_edges(states, pos)
     points = get_points(edges)
     return pos, edges, points
@@ -363,35 +365,6 @@ def move_inwards(r, pos, edges, points, outer, inner):
     
     return get_values(outer, inner, r)
 
-def swap_inwards(pos, edges, points, outer, inner):
-    start = time.time()
-    states = outer + inner
-
-    while len(points) > 0:
-        nodes = {}
-        for i in range(2):
-            for j in range(2):
-                n = list(points.values())[0][i][j]
-                nodes[n] = "out" if (n in outer) else "in"
-        
-        loc = list(nodes.values())
-        nodes = list(nodes.keys())
-
-        if (loc[0] != loc[1]) and (loc[2] != loc[3]):
-            if loc[0] != loc[2]:
-                swap_nodes(pos, nodes[0], nodes[2], outer, inner)
-            else:
-                swap_nodes(pos, nodes[0], nodes[3], outer, inner)
-
-        edges = get_edges(states, pos)
-        points = get_points(edges)
-
-        if time.time() - start > 10:
-            print("ERROR: exceeded maximum runtime of 10 secs")
-            break
-    
-    return pos, edges, points
-
 def decrowd(r, outer, inner):
     if len(outer) < len(inner):
         _, _, points = get_values(inner, outer, r)
@@ -428,17 +401,23 @@ def recenter_inner(r, pos, edges, outer, inner):
     #         if in_face(face, pos, node):
     #             centroids.append(get_centroid(face, pos))
 
+    # simpler method of just placing all the inner nodes in the largest face
     new_center = (W, H)
     if len(faces) > 0:
         _, face = get_longest(faces)
         new_center = get_centroid(face, pos)
 
+    pface = []
+    for state in face:
+        pface.append(pos[state])
+
     pos, edges, points = get_values(outer, inner, r, new_center)
     return pos, edges, points, new_center
 
-def rotate_inner(r, new_center, pos, edges, points, outer, inner):
+def rotate_inner(r, new_center, outer, inner):
+    best = 0
+    _, edges, points = get_values(outer, inner, r, new_center, best)
     if len(inner) > 1:
-        best = 0
         edge_sum = get_edge_len(edges, outer)
         intersections = len(points)
         for offset in range(1, 360, 1):
@@ -450,9 +429,55 @@ def rotate_inner(r, new_center, pos, edges, points, outer, inner):
                     edge_sum = edge_len
                     intersections = len(points)
 
-        return get_values(outer, inner, r, new_center, best)
+    pos, edges, points = get_values(outer, inner, r, new_center, best)
+    return pos, edges, points, best
 
-    return get_values(outer, inner, r, new_center)
+def resize_inner(r_out, new_center, offset, outer, inner):
+    r_in = 0
+    pos, edge, points = get_values(outer, inner, r_out, new_center, offset)
+
+    if len(inner) > 1:
+        while 2**r_in < len(inner):
+            r_in += 1
+        
+        intersections = len(points)
+        while len(points) <= intersections:
+            r_in += 1
+            pos, edge, points = get_values(outer, inner, r_out, new_center, offset, r_in)
+
+        r_in -= 1
+        pos, edge, points = get_values(outer, inner, r_out, new_center, offset, round(r_in/2))
+        
+    return pos, edge, points, r_in
+
+def swap_inwards(pos, edges, points, outer, inner):
+    start = time.time()
+    states = outer + inner
+
+    while len(points) > 0:
+        nodes = {}
+        for i in range(2):
+            for j in range(2):
+                n = list(points.values())[0][i][j]
+                nodes[n] = "out" if (n in outer) else "in"
+        
+        loc = list(nodes.values())
+        nodes = list(nodes.keys())
+
+        if (loc[0] != loc[1]) and (loc[2] != loc[3]):
+            if loc[0] != loc[2]:
+                swap_nodes(pos, nodes[0], nodes[2], outer, inner)
+            else:
+                swap_nodes(pos, nodes[0], nodes[3], outer, inner)
+
+        edges = get_edges(states, pos)
+        points = get_points(edges)
+
+        if time.time() - start > 10:
+            print("ERROR: exceeded maximum runtime of 10 secs")
+            break
+    
+    return pos, edges, points
 
 def rearrange_states(r, pos, edges, points, states):
     outer = states
@@ -460,10 +485,17 @@ def rearrange_states(r, pos, edges, points, states):
     faces = []
 
     pos, edges, points = move_inwards(r, pos, edges, points, outer, inner)
+    # if len(points) > 0: print("step1:", points)
     pos, edges, points = decrowd(r, outer, inner)
+    # if len(points) > 0: print("step2:", points)
     pos, edges, points, new_center = recenter_inner(r, pos, edges, outer, inner)
-    pos, edges, points = rotate_inner(r, new_center, pos, edges, points, outer, inner)
+    # if len(points) > 0: print("step3:", points)
+    pos, edges, points, offset = rotate_inner(r, new_center, outer, inner)
+    # if len(points) > 0: print("step4:", points)
+    pos, edges, points, r_in = resize_inner(r, new_center, offset, outer, inner)
+    # if len(points) > 0: print("step5:", points)
     pos, edges, points = swap_inwards(pos, edges, points, outer, inner)
+    if len(points) > 0: print("step6:", points)
 
     return pos, edges, points
 
