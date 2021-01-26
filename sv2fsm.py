@@ -47,7 +47,7 @@ def run(path):
     draw_fsm.drawer(states, "out/" + FILENAME[:-3] + '.png', IMAGE, CIRCULAR)
 
     print("finished", path, ": it took", round(time.time()-start, 2), "secs")
-    cleanup()
+    # cleanup()
 
 # get file name
 parser = argparse.ArgumentParser(description='sv2fsm: automatically generates a FSM diagram from SystemVerilog code.')

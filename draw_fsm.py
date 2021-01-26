@@ -5,6 +5,8 @@ import random
 import time
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
+TIMEOUT = 10
+
 DARK = True
 WHITE = (255,255,255,255)
 BLACK = (0,0,0,255)
@@ -16,6 +18,8 @@ W = 8000
 H = 8000
 R_OUT = round(W/3)
 R_STATE = round(R_OUT/10)
+GLOBAL_OFFSET = 0#math.pi/2
+STEPS = 6
 
 # https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
 def get_intersection(edge1, edge2):
@@ -52,8 +56,12 @@ def get_length(x1, y1, x2, y2):
     return math.sqrt((x2-x1)**2 + (y2-y1)**2)
 
 def get_midpoint(x1, y1, x2, y2):
-    x = (x2-x1)/2
-    y = (y2-y1)/2
+    minx = min(x1, x2)
+    miny = min(y1, y2)
+    maxx = max(x1, x2)
+    maxy = max(y1, y2)
+    x = minx + (maxx-minx)/2
+    y = miny + (maxy-miny)/2
     return x, y
 
 def get_longest(states):
@@ -71,10 +79,16 @@ def get_slope(edge):
     y1 = edge[0][1]
     x2 = edge[1][0]
     y2 = edge[1][1]
-
-    return (y2-y1)/(x2-x1)
+    
+    if x2 != x1:
+        return (y2-y1)/(x2-x1)
+    else:
+        return float('inf')
 
 def get_angle(x1, y1, x2, y2):
+    return math.atan2(y2-y1, x2-x1)
+
+def get_face_angle(x1, y1, x2, y2):
     delta = math.atan2(y2, x2) - math.atan2(y1, x1)
 
     while (delta > math.pi) or (delta < -math.pi):
@@ -95,9 +109,28 @@ def in_face(face, pos, x, y):
         y1 = pos[face[i]][1] - y
         x2 = pos[face[(i+1)%count]][0] - x
         y2 = pos[face[(i+1)%count]][1] - y
-        angle += get_angle(x1, y1, x2, y2)
+        angle += get_face_angle(x1, y1, x2, y2)
     
     return abs(angle) >= math.pi
+
+def check_adjacent(states, outer, inner):
+    if (states[0] in outer) != (states[1] in outer):
+        return False
+
+    l = outer
+    if states[0] in inner:
+        l = inner
+
+    if len(l) < 3:
+        return True
+    
+    i1 = l.index(states[0])
+    i2 = l.index(states[1])
+
+    if (abs(i1-i2) == 1) or (abs(i1-i2) == len(l)-1):
+        return True
+    
+    return False
 
 ################################################################################
 
@@ -169,7 +202,7 @@ def get_xy(r, states, w=W, h=H, offset=0):
 
     for i in range(count):
         state = states[i]
-        degree = 2*i*math.pi/count + offset
+        degree = 2*i*math.pi/count + offset - GLOBAL_OFFSET
         x = w/2 + r*math.cos(degree)
         y = h/2 + r*math.sin(degree)
         pos[state] = (round(x), round(y))
@@ -190,7 +223,7 @@ def get_transitions(edges, states):
     
     return trans
 
-def get_edges(states, pos, digraph=False):
+def get_edges(states, pos, self_loops=False):
     edges = {}
     count = len(states)
     for i in range(count):
@@ -203,11 +236,9 @@ def get_edges(states, pos, digraph=False):
             tup = line.partition(", ")
             dst = tup[0]
             tran = tup[2]
-            if digraph or (dst != state):
+            if (dst == state) == self_loops:
                 if (state in pos) and (dst in pos):
                     edges[(state, dst)] = (pos[state], pos[dst])
-            # else:
-            #     print("skipping same state transitions for now")
 
     return edges
 
@@ -277,16 +308,22 @@ def get_faces(target, trans, outer):
             valid = set(trans) & set(outer)
             for face in faces:
                 valid = valid - set(face)
+            if len(valid) == 0:
+                valid = set(trans) & set(outer)
+
             i = random.randrange(len(valid))
             path = [list(valid)[i]]
             visited = []
         else:
             start = path[0]
             curr = path[-1]
-            if (len(path) > 2) and (start in trans[curr]):
+            if (len(path) > 2) and (start in trans[curr]):    
                 valid = set(trans) & set(outer)
-                if (target == 1) or not all(face in path for face in valid):
+                if target == 1:
                     faces.append(path)
+                elif all(set(face) != set(path) for face in faces):
+                    if not all(node in path for node in valid):
+                        faces.append(path)
 
                 path = []
                 visited = []
@@ -333,6 +370,36 @@ def get_edge_len(edges, outer):
     
     return edge_len
 
+def get_arc_points(points, edge, height, step=0, angle=90):
+    if step == STEPS:
+        return
+
+    x1 = edge[0][0]
+    y1 = edge[0][1]
+    x2 = edge[1][0]
+    y2 = edge[1][1]
+
+    x, y = get_midpoint(x1, y1, x2, y2)
+    nh = height*math.sin(angle*math.pi/180)
+
+    points[angle] = (x + nh, y + nh)
+    dtheta = 45/(2**step)
+    return get_arc_points(points, ((x1, y1), (x, y)), height, step+1, angle - dtheta), get_arc_points(points, ((x, y), (x2, y2)), height, step+1, angle + dtheta)
+
+def get_scale(states, edge, outer, inner):
+    scale = 1
+    x, y = get_midpoint(edge[0][0], edge[0][1], edge[1][0], edge[1][1])
+    if x < W/2:
+        scale *= -1
+
+    length = get_length(edge[0][0], edge[0][1], edge[1][0], edge[1][1])
+    scale *= length/12
+
+    if check_adjacent(states, outer, inner):
+        scale *= 2
+
+    return scale
+
 ################################################################################
 
 def move_inwards(pos, edges, points, outer, inner):
@@ -362,11 +429,12 @@ def move_inwards(pos, edges, points, outer, inner):
         # update position of that node
         pos, edges, points = get_values(outer, inner, skip=True)
 
-        if time.time() - start > 10:
-            print("WARNING: exceeded maximum runtime of 10 secs")
+        if time.time() - start > TIMEOUT:
+            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs")
             break
     
-    return get_values(outer, inner)
+    pos, edges, points = get_values(outer, inner)
+    return pos, edges, points
 
 def decrowd(outer, inner):
     if len(outer) < len(inner):
@@ -398,11 +466,6 @@ def recenter_inner(pos, edges, outer, inner):
     # based off euler's formula v - e + f = 2
     f = 2 + round(e/2) - v
     faces = get_faces(f-1, trans, outer)
-
-    # for face in faces:
-    #     for node in inner:
-    #         if in_face(face, pos, node):
-    #             centroids.append(get_centroid(face, pos))
 
     # simpler method of just placing all the inner nodes in the largest face
     new_center = (W, H)
@@ -483,8 +546,8 @@ def swap_inwards(pos, edges, points, outer, inner):
         edges = get_edges(states, pos)
         points = get_points(edges)
 
-        if time.time() - start > 10:
-            print("ERROR: exceeded maximum runtime of 10 secs")
+        if time.time() - start > TIMEOUT:
+            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs")
             break
     
     return pos, edges, points
@@ -500,28 +563,76 @@ def rearrange_states(pos, edges, points, states):
     pos, edges, points, offset = rotate_inner(new_center, r_in, outer, inner)
     pos, edges, points = swap_inwards(pos, edges, points, outer, inner)
 
-    return pos, edges, points, new_center
+    if len(points) > 0:
+        print("ERROR: the graph is still not polar despite applying all transformations")
+
+    return pos, edges, points, new_center, outer, inner
 
 ################################################################################
 
-def draw_point(draw, x, y, fill=GREEN):
-    r = 80
+def draw_point(draw, x, y, fill=GREEN, r=80):
     leftUpPoint = (x-r, y-r)
     rightDownPoint = (x+r, y+r)
     twoPointList = [leftUpPoint, rightDownPoint]
-    # color = GREEN # WHITE if DARK else BLACK
     draw.ellipse(twoPointList, fill=fill)
 
-def draw_circle(draw, x, y, r):
+def draw_arc(draw, states, edge, outer, inner, fill=WHITE):
+    points = {}
+    scale = get_scale(states, edge, outer, inner)
+
+    get_arc_points(points, edge, height=scale)
+
+    indexes = list(points.keys())
+    indexes.sort()
+
+    prevx = edge[0][0]
+    prevy = edge[0][1]
+
+    for angle in indexes:
+        x = points[angle][0]
+        y = points[angle][1]
+        draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
+        prevx = x
+        prevy = y
+    
+    x = edge[1][0]
+    y = edge[1][1]
+    draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
+
+def draw_circle(draw, x, y, r, outline=RED, fill=True):
     leftUpPoint = (x-r, y-r)
     rightDownPoint = (x+r, y+r)
     twoPointList = [leftUpPoint, rightDownPoint]
-    draw.ellipse(twoPointList, fill=(255,0,0,255))
+    bg = None
+    if fill:
+        bg = BLACK if DARK else WHITE
+    draw.ellipse(twoPointList, outline=outline, fill=bg, width=10)
 
-def draw_edges(draw, edges):
+def draw_edges(draw, edges, outer, inner):
+    color = WHITE if DARK else BLACK
+    drawn = []
+
     for edge in edges:
-        color = WHITE if DARK else BLACK
-        draw.line(edges[edge], fill=color, width=10)
+        if edge[0] == edge[1]:
+            r = 1.5*R_STATE
+            x = edges[edge][0][0]
+            y = edges[edge][0][1]
+            angle = get_angle(W/2, H/2, x, y)
+
+            if edge[0] in outer:
+                r = 1.5*R_STATE
+            else:
+                r = R_STATE
+
+            x = round(x + r*math.cos(angle))
+            y = round(y + r*math.sin(angle))
+            draw_circle(draw, x, y, r, outline=color, fill=False)
+        elif edge not in drawn:
+            draw.line(edges[edge], fill=color, width=10)
+            drawn.append((edge[0], edge[1]))
+            drawn.append((edge[1], edge[0]))
+        else:
+            draw_arc(draw, edge, edges[edge], outer, inner, fill=color)
 
 def draw_states(draw, pos):
     for state in pos:
@@ -542,13 +653,15 @@ def draw_text(draw, pos):
         y = pos[state][1] - size/1.5
 
         fnt = ImageFont.truetype("lib/monospace.ttf", size)
-        color = WHITE # BLACK if DARK else WHITE
+        color = WHITE if DARK else BLACK
 
         draw.text((x, y), text=state, font=fnt, fill=color)
 
 def draw_fsm(draw, states, circular=False):
     r_in = 0
     center = (0,0)
+    outer = states
+    inner = []
 
     planar = is_planar_graph(states)
     pos = get_xy(R_OUT, states)
@@ -556,10 +669,14 @@ def draw_fsm(draw, states, circular=False):
     points = get_points(edges)
 
     if (len(points) != 0) and planar and not circular:
-        pos, edges, points, center = rearrange_states(pos, edges, points, states)
+        pos, edges, points, center, outer, inner = rearrange_states(pos, edges, points, states)
+    elif not planar:
+        print("Note: this graph is not planar, returning circular graph")
 
+    # add the self loop edges back in
+    edges.update(get_edges(states, pos, self_loops=True))
     if draw != None:
-        draw_edges(draw, edges)
+        draw_edges(draw, edges, outer, inner)
         draw_states(draw, pos)
         draw_text(draw, pos)
         for point in points:
