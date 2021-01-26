@@ -14,12 +14,12 @@ RED = (255,0,0,255)
 GREEN = (0,255,0,255)
 BLUE = (0,0,255,255)
 
-W = 8000
-H = 8000
+W = 12000
+H = W
 R_OUT = round(W/3)
 R_STATE = round(R_OUT/10)
-GLOBAL_OFFSET = 0#math.pi/2
-STEPS = 6
+GLOBAL_OFFSET = math.pi/2
+STEPS = 10
 
 # https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
 def get_intersection(edge1, edge2):
@@ -98,6 +98,12 @@ def get_face_angle(x1, y1, x2, y2):
             delta -= 2*math.pi
 
     return delta
+
+def in_circle(pos, r, x, y):
+    l = get_length(pos[0], pos[1], x, y)
+    if l <= r:
+        return True
+    return False
 
 # https://www.eecs.umich.edu/courses/eecs380/HANDOUTS/PROJ2/InsidePoly.html#:~:text=To%20determine%20the%20status%20of,point%20is%20outside%20the%20polygon.
 def in_face(face, pos, x, y):
@@ -576,7 +582,56 @@ def draw_point(draw, x, y, fill=GREEN, r=80):
     twoPointList = [leftUpPoint, rightDownPoint]
     draw.ellipse(twoPointList, fill=fill)
 
-def draw_arc(draw, states, edge, outer, inner, fill=WHITE):
+def draw_arrow(draw, x, y, angle, r=100, fill=WHITE):
+    eqtri = math.pi/6
+    p1 = x, y
+    p2 = x + r*math.cos(eqtri+angle), y + r*math.sin(eqtri+angle)
+    p3 = x + r*math.cos(eqtri-angle), y - r*math.sin(eqtri-angle)
+    draw.line((p1, p2), fill=fill, width=10)
+    draw.line((p1, p3), fill=fill, width=10)
+    draw.line((p2, p3), fill=fill, width=10)
+    # draw_point(draw, x - r*math.cos(eqtri)/1.5, y, fill=fill, r=r/3)
+
+def draw_circle(draw, x, y, r, outline=RED, fill=True):
+    leftUpPoint = (x-r, y-r)
+    rightDownPoint = (x+r, y+r)
+    twoPointList = [leftUpPoint, rightDownPoint]
+    bg = None
+    if fill:
+        bg = BLACK if DARK else WHITE
+    draw.ellipse(twoPointList, outline=outline, fill=bg, width=10)
+
+def draw_loop(draw, state, pos, outer, fill=WHITE):
+    r = R_STATE
+    x = pos[0]
+    y = pos[1]
+    angle = get_angle(W/2, H/2, x, y)
+
+    if state in outer:
+        r *= 1.5
+
+    x = round(x + r*math.cos(angle))
+    y = round(y + r*math.sin(angle))
+    draw_circle(draw, x, y, r, outline=fill, fill=False)
+
+    offset = math.pi - (math.pi/3.067)*(R_STATE/r)
+    draw_arrow(draw, x+r*math.cos(angle+offset), y+r*math.sin(angle+offset), angle+0.96*offset-math.pi/2, fill=fill)
+
+def draw_ray(draw, edge, fill=WHITE):
+    draw.line(edge, fill=fill, width=10)
+
+    x1 = edge[0][0]
+    y1 = edge[0][1]
+    x2 = edge[1][0]
+    y2 = edge[1][1]
+
+    angle = get_angle(x2, y2, x1, y1)
+    xoff = R_STATE*math.cos(angle)
+    yoff = R_STATE*math.sin(angle)
+
+    draw_arrow(draw, x2+xoff, y2+yoff, angle)
+
+def draw_arc(draw, pos, states, edge, outer, inner, fill=WHITE):
     points = {}
     scale = get_scale(states, edge, outer, inner)
 
@@ -588,10 +643,20 @@ def draw_arc(draw, states, edge, outer, inner, fill=WHITE):
     prevx = edge[0][0]
     prevy = edge[0][1]
 
+    endx1 = edge[0][0]
+    endy1 = edge[0][1]
+    endx2 = edge[1][0]
+    endy2 = edge[1][1]
+
     for angle in indexes:
         x = points[angle][0]
         y = points[angle][1]
         draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
+
+        if not in_circle(pos[states[1]], R_STATE, x, y):
+            endx1 = x
+            endy1 = y
+        
         prevx = x
         prevy = y
     
@@ -599,40 +664,22 @@ def draw_arc(draw, states, edge, outer, inner, fill=WHITE):
     y = edge[1][1]
     draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
 
-def draw_circle(draw, x, y, r, outline=RED, fill=True):
-    leftUpPoint = (x-r, y-r)
-    rightDownPoint = (x+r, y+r)
-    twoPointList = [leftUpPoint, rightDownPoint]
-    bg = None
-    if fill:
-        bg = BLACK if DARK else WHITE
-    draw.ellipse(twoPointList, outline=outline, fill=bg, width=10)
+    angle = get_angle(endx2, endy2, endx1, endy1)
+    draw_arrow(draw, endx1, endy1, angle, fill=fill)
 
-def draw_edges(draw, edges, outer, inner):
+def draw_edges(draw, pos, edges, outer, inner):
     color = WHITE if DARK else BLACK
     drawn = []
 
     for edge in edges:
         if edge[0] == edge[1]:
-            r = 1.5*R_STATE
-            x = edges[edge][0][0]
-            y = edges[edge][0][1]
-            angle = get_angle(W/2, H/2, x, y)
-
-            if edge[0] in outer:
-                r = 1.5*R_STATE
-            else:
-                r = R_STATE
-
-            x = round(x + r*math.cos(angle))
-            y = round(y + r*math.sin(angle))
-            draw_circle(draw, x, y, r, outline=color, fill=False)
+            draw_loop(draw, edge[0], edges[edge][0], outer, fill=color)
         elif edge not in drawn:
-            draw.line(edges[edge], fill=color, width=10)
             drawn.append((edge[0], edge[1]))
             drawn.append((edge[1], edge[0]))
+            draw_ray(draw, edges[edge], fill=color)
         else:
-            draw_arc(draw, edge, edges[edge], outer, inner, fill=color)
+            draw_arc(draw, pos, edge, edges[edge], outer, inner, fill=color)
 
 def draw_states(draw, pos):
     for state in pos:
@@ -676,7 +723,7 @@ def draw_fsm(draw, states, circular=False):
     # add the self loop edges back in
     edges.update(get_edges(states, pos, self_loops=True))
     if draw != None:
-        draw_edges(draw, edges, outer, inner)
+        draw_edges(draw, pos, edges, outer, inner)
         draw_states(draw, pos)
         draw_text(draw, pos)
         for point in points:
@@ -699,3 +746,11 @@ def drawer(states, filename, gen_im=True, circular=False):
     if gen_im:
         im.thumbnail(thumb)
         im.save(filename)
+
+''' TODO
+- self loops inner
+- parser fucked something up in test3? may be a bigger issue
+- add dark mode to argparse
+- change default to arc first then straight?
+- if no inner, increase R_STATE
+'''
