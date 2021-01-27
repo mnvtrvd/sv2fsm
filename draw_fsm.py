@@ -6,13 +6,7 @@ import time
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 TIMEOUT = 10
-
 DARK = False
-WHITE = (255,255,255,255)
-BLACK = (0,0,0,255)
-RED = (255,0,0,255)
-GREEN = (0,255,0,255)
-BLUE = (0,0,255,255)
 
 W = 12000
 H = W
@@ -386,10 +380,17 @@ def get_arc_points(points, edge, height, step=0, angle=90):
     y2 = edge[1][1]
 
     x, y = get_midpoint(x1, y1, x2, y2)
+    m = get_slope(((x1, y1), (x2, y2)))
+
     nh = height*math.sin(angle*math.pi/180)
 
-    points[angle] = (x + nh, y + nh)
+    if abs(m) < 1:
+        points[angle] = (x, y + nh)
+    else:
+        points[angle] = (x + nh, y)
+
     dtheta = 45/(2**step)
+
     return get_arc_points(points, ((x1, y1), (x, y)), height, step+1, angle - dtheta), get_arc_points(points, ((x, y), (x2, y2)), height, step+1, angle + dtheta)
 
 def get_scale(states, edge, outer, inner):
@@ -404,7 +405,7 @@ def get_scale(states, edge, outer, inner):
     if check_adjacent(states, outer, inner):
         scale *= 2
 
-    return scale
+    return round(scale)
 
 ################################################################################
 
@@ -576,7 +577,7 @@ def rearrange_states(pos, edges, points, states):
 
 ################################################################################
 
-def draw_point(draw, x, y, fill=GREEN, r=80):
+def draw_point(draw, x, y, fill="green", r=80):
     leftUpPoint = (x-r, y-r)
     rightDownPoint = (x+r, y+r)
     twoPointList = [leftUpPoint, rightDownPoint]
@@ -587,18 +588,16 @@ def draw_arrow(draw, x, y, angle, fill, r=100):
     p1 = x, y
     p2 = x + r*math.cos(eqtri+angle), y + r*math.sin(eqtri+angle)
     p3 = x + r*math.cos(eqtri-angle), y - r*math.sin(eqtri-angle)
-    draw.line((p1, p2), fill=fill, width=10)
-    draw.line((p1, p3), fill=fill, width=10)
-    draw.line((p2, p3), fill=fill, width=10)
-    # draw_point(draw, x - r*math.cos(eqtri)/1.5, y, fill=fill, r=r/3)
 
-def draw_circle(draw, x, y, r, outline=RED, fill=False):
+    draw.polygon((p1, p2, p3), fill=fill)
+
+def draw_circle(draw, x, y, r, outline="red", fill=False):
     leftUpPoint = (x-r, y-r)
     rightDownPoint = (x+r, y+r)
     twoPointList = [leftUpPoint, rightDownPoint]
     bg = None
     if fill:
-        bg = BLACK if DARK else WHITE
+        bg = "black" if DARK else "white"
     draw.ellipse(twoPointList, outline=outline, fill=bg, width=10)
 
 def draw_loop(draw, state, pos, outer, fill):
@@ -670,7 +669,7 @@ def draw_arc(draw, pos, states, edge, outer, inner, fill):
     draw_arrow(draw, endx1, endy1, angle, fill)
 
 def draw_edges(draw, pos, edges, outer, inner):
-    color = WHITE if DARK else BLACK
+    color = "white" if DARK else "black"
     drawn = []
 
     for edge in edges:
@@ -690,7 +689,7 @@ def draw_states(draw, pos):
         draw_circle(draw, x, y, R_STATE, fill=True)
 
 def draw_text(draw, pos):
-    color = WHITE if DARK else BLACK
+    color = "white" if DARK else "black"
     count = len(pos)
 
     states = list(pos.keys())
@@ -742,7 +741,7 @@ def drawer(states, filename, no_bg, dark, circular, gen_im=False):
         scale = 5
         thumb = canvas[0]/scale, canvas[1]/scale
 
-        background = BLACK if DARK else WHITE
+        background = "black" if DARK else "white"
         if no_bg:
             background = None            
         im = Image.new('RGBA', canvas, background)
@@ -757,6 +756,5 @@ def drawer(states, filename, no_bg, dark, circular, gen_im=False):
 ''' TODO
 - self loops inner
 - parser fucked something up in test3? may be a bigger issue
-- change default to arc first then straight?
 - if no inner, increase R_STATE
 '''
