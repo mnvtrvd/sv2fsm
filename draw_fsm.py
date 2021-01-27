@@ -15,6 +15,8 @@ R_STATE = round(R_OUT/10)
 GLOBAL_OFFSET = math.pi/2
 STEPS = 10
 
+print(R_OUT, R_STATE)
+
 # https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
 def get_intersection(edge1, edge2):
     x1 = edge1[0][0]
@@ -67,6 +69,23 @@ def get_longest(states):
             longest = state
     
     return length, longest
+
+def get_closest(arr, x, y):
+    l = 0
+    shortest = []
+    for p in arr:
+        if l == 0:
+            l = get_length(x, y, p[0], p[1])
+            shortest = [p]
+        else:
+            length = get_length(x, y, p[0], p[1])
+            if length < l:
+                l = length
+                shortest = [p]
+            elif length == l:
+                shortest.append(p)
+
+    return l, shortest
 
 def get_slope(edge):
     x1 = edge[0][0]
@@ -236,20 +255,21 @@ def get_edges(states, pos, self_loops=False):
             tup = line.partition(", ")
             dst = tup[0]
             tran = tup[2]
+
             if (dst == state) == self_loops:
                 if (state in pos) and (dst in pos):
                     edges[(state, dst)] = (pos[state], pos[dst])
 
     return edges
 
-def get_edge_count(states, edges, include_self_loops=True):
+def get_edge_count(states, edges, include_self_loops=True, directed=False):
     undirected = []
 
     for edge in edges:
         var0 = edge[0] + ":" + edge[1]
         var1 = edge[1] + ":" + edge[0]
 
-        if (var0 not in undirected) and (var1 not in undirected):
+        if directed or ((var0 not in undirected) and (var1 not in undirected)):
             undirected.append(var0)
 
     count = {}
@@ -407,6 +427,22 @@ def get_scale(states, edge, outer, inner):
 
     return round(scale)
 
+def get_outer_midpoints(outer, pos):
+    start = outer[0]
+    tmp = outer[1:]
+    edges = []
+    midpoints = []
+    for state in tmp:
+        edges.append((start, state))
+        midpoints.append(get_midpoint(pos[start][0], pos[start][1], pos[state][0], pos[state][1]))
+        start = state
+    
+    edges.append((start, outer[0]))
+    midpoints.append(get_midpoint(pos[start][0], pos[start][1], pos[outer[0]][0], pos[outer[0]][1]))
+
+    return edges, midpoints
+
+
 ################################################################################
 
 def move_inwards(pos, edges, points, outer, inner):
@@ -442,6 +478,20 @@ def move_inwards(pos, edges, points, outer, inner):
     
     pos, edges, points = get_values(outer, inner)
     return pos, edges, points
+
+def resize_outer(inner):
+    if len(inner) == 0:
+        global R_OUT
+        global R_STATE
+        # 2*1/3+2*1/30
+        R_OUT = round(W/3.5)
+        R_STATE = round(R_OUT/5)
+        # R_OUT = round(0.5*W)
+        # R_STATE = round(R_OUT/10)
+        print(R_OUT, R_STATE)
+        return False
+
+    return True
 
 def decrowd(outer, inner):
     if len(outer) < len(inner):
@@ -562,13 +612,18 @@ def swap_inwards(pos, edges, points, outer, inner):
 def rearrange_states(pos, edges, points, states):
     outer = states
     inner = []
+    new_center = W/2, H/2
 
     pos, edges, points = move_inwards(pos, edges, points, outer, inner)
-    pos, edges, points = decrowd(outer, inner)
-    pos, edges, points, new_center, face = recenter_inner(pos, edges, outer, inner)
-    pos, edges, points, r_in = resize_inner(new_center, face, outer, inner)
-    pos, edges, points, offset = rotate_inner(new_center, r_in, outer, inner)
-    pos, edges, points = swap_inwards(pos, edges, points, outer, inner)
+    complicated = resize_outer(inner)
+    pos, edges, points = get_values(outer, inner)
+
+    if complicated:
+        pos, edges, points = decrowd(outer, inner)
+        pos, edges, points, new_center, face = recenter_inner(pos, edges, outer, inner)
+        pos, edges, points, r_in = resize_inner(new_center, face, outer, inner)
+        pos, edges, points, offset = rotate_inner(new_center, r_in, outer, inner)
+        pos, edges, points = swap_inwards(pos, edges, points, outer, inner)
 
     if len(points) > 0:
         print("ERROR: the graph is still not polar despite applying all transformations")
@@ -600,21 +655,56 @@ def draw_circle(draw, x, y, r, outline="red", fill=False):
         bg = "black" if DARK else "white"
     draw.ellipse(twoPointList, outline=outline, fill=bg, width=10)
 
-def draw_loop(draw, state, pos, outer, fill):
+def draw_loop(draw, pos, edges, state, p, outer, inner, fill):
     r = R_STATE
-    x = pos[0]
-    y = pos[1]
-    angle = get_angle(W/2, H/2, x, y)
+    x = p[0]
+    y = p[1]
+    
+    out_edges, out_mid = get_outer_midpoints(outer, pos)
 
     if state in outer:
         r *= 1.5
+        angle = get_angle(W/2, H/2, x, y)
+        x = round(x + r*math.cos(angle))
+        y = round(y + r*math.sin(angle))
+        draw_circle(draw, x, y, r, outline=fill, fill=False)
 
-    x = round(x + r*math.cos(angle))
-    y = round(y + r*math.sin(angle))
-    draw_circle(draw, x, y, r, outline=fill, fill=False)
+        offset = math.pi - (math.pi/3.067)*(R_STATE/r)
+        draw_arrow(draw, x+r*math.cos(angle+offset), y+r*math.sin(angle+offset), angle+0.96*offset-math.pi/2, fill)
+    else:
+        states = outer + inner
+        counts = get_edge_count(states, edges, False, True)
+        if counts[state] > 2:
+            r *= 0.75
 
-    offset = math.pi - (math.pi/3.067)*(R_STATE/r)
-    draw_arrow(draw, x+r*math.cos(angle+offset), y+r*math.sin(angle+offset), angle+0.96*offset-math.pi/2, fill)
+        el, closest_edge = get_closest(out_mid, x, y)
+
+        for mid_point in closest_edge:
+            src, dst = out_edges[out_mid.index(mid_point)]
+            angle = get_angle(pos[src][0], pos[src][1], pos[dst][0], pos[dst][1]) - math.pi/2
+
+        pos_outer = []
+        for node in outer:
+            pos_outer.append(pos[node])
+
+        _, closest_node = get_closest(pos_outer, x, y)
+
+        for p_out in closest_node:
+            node = list(pos.keys())[list(pos.values()).index(p_out)]
+            if ((state, node) not in edges) and ((node, state) not in edges):
+                angle = get_angle(x, y, p_out[0], p_out[1])
+                break
+
+        if el - R_STATE < r:
+            r = (el - R_STATE)
+
+        x = round(x + r*math.cos(angle))
+        y = round(y + r*math.sin(angle))
+        
+        draw_circle(draw, x, y, r, outline=fill, fill=False)
+        offset = math.pi - (math.pi/3.067)*(R_STATE/r)
+        draw_arrow(draw, x+r*math.cos(angle+offset), y+r*math.sin(angle+offset), angle+0.96*offset-math.pi/2, fill)
+
 
 def draw_ray(draw, edge, fill):
     x1 = edge[0][0]
@@ -671,10 +761,10 @@ def draw_arc(draw, pos, states, edge, outer, inner, fill):
 def draw_edges(draw, pos, edges, outer, inner):
     color = "white" if DARK else "black"
     drawn = []
-
+    
     for edge in edges:
         if edge[0] == edge[1]:
-            draw_loop(draw, edge[0], edges[edge][0], outer, color)
+            draw_loop(draw, pos, edges, edge[0], edges[edge][0], outer, inner, color)
         elif edge not in drawn:
             drawn.append((edge[0], edge[1]))
             drawn.append((edge[1], edge[0]))
@@ -696,7 +786,7 @@ def draw_text(draw, pos):
     longest, _ = get_longest(states)
 
     for state in pos:
-        size = math.floor(R_OUT/4/longest)
+        size = math.floor(10*R_STATE/4/longest)
 
         x = pos[state][0] - len(state)*size/3.5
         y = pos[state][1] - size/1.5
@@ -716,12 +806,16 @@ def draw_fsm(draw, states, circular=False):
     edges = get_edges(states, pos)
     points = get_points(edges)
 
-    if (len(points) != 0) and planar and not circular:
+    # if (len(points) != 0) and 
+    if planar and not circular:
         pos, edges, points, center, outer, inner = rearrange_states(pos, edges, points, states)
     elif not planar:
         print("Note: this graph is not planar, returning circular graph")
 
+    print(R_OUT, R_STATE)
+
     # add the self loop edges back in
+    states = outer + inner
     edges.update(get_edges(states, pos, self_loops=True))
     if draw != None:
         draw_edges(draw, pos, edges, outer, inner)
@@ -732,7 +826,11 @@ def draw_fsm(draw, states, circular=False):
 
 def drawer(states, filename, no_bg, dark, circular, gen_im=False):
     global DARK
+    global R_OUT
+    global R_STATE
     DARK = dark
+    R_OUT = round(W/3)
+    R_STATE = round(R_OUT/10)
 
     draw = None
     if gen_im:
@@ -754,7 +852,5 @@ def drawer(states, filename, no_bg, dark, circular, gen_im=False):
         im.save(filename)
 
 ''' TODO
-- self loops inner
 - parser fucked something up in test3? may be a bigger issue
-- if no inner, increase R_STATE
 '''
