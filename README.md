@@ -7,10 +7,11 @@ This was designed using Python3.
 
 ## Style Requirements:
 
-For this to work seemlessly, there need to be a few hard style requirements.
-Given that your code compiles and you have generally good SystemVerilog
-style habits, this should work. If there are any special requirements, I will
-list them below:
+I tried to make it pretty style ambiguous, so this should work
+regardless of your particular branch of SystemVerilog.
+Given that your code compiles and you have generally good SystemVerilog style habits, this should work. 
+
+For this to work seemlessly, there need to be a few hard style requirements listed below:
 
 - all case and conditional (if/else if/else) statements NEED a "begin" and "end". (I know one-liners
 are possible, but the parser I created isn't currently capable of doing so)

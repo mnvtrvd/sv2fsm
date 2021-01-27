@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 TIMEOUT = 10
 
-DARK = True
+DARK = False
 WHITE = (255,255,255,255)
 BLACK = (0,0,0,255)
 RED = (255,0,0,255)
@@ -582,7 +582,7 @@ def draw_point(draw, x, y, fill=GREEN, r=80):
     twoPointList = [leftUpPoint, rightDownPoint]
     draw.ellipse(twoPointList, fill=fill)
 
-def draw_arrow(draw, x, y, angle, r=100, fill=WHITE):
+def draw_arrow(draw, x, y, angle, fill, r=100):
     eqtri = math.pi/6
     p1 = x, y
     p2 = x + r*math.cos(eqtri+angle), y + r*math.sin(eqtri+angle)
@@ -592,7 +592,7 @@ def draw_arrow(draw, x, y, angle, r=100, fill=WHITE):
     draw.line((p2, p3), fill=fill, width=10)
     # draw_point(draw, x - r*math.cos(eqtri)/1.5, y, fill=fill, r=r/3)
 
-def draw_circle(draw, x, y, r, outline=RED, fill=True):
+def draw_circle(draw, x, y, r, outline=RED, fill=False):
     leftUpPoint = (x-r, y-r)
     rightDownPoint = (x+r, y+r)
     twoPointList = [leftUpPoint, rightDownPoint]
@@ -601,7 +601,7 @@ def draw_circle(draw, x, y, r, outline=RED, fill=True):
         bg = BLACK if DARK else WHITE
     draw.ellipse(twoPointList, outline=outline, fill=bg, width=10)
 
-def draw_loop(draw, state, pos, outer, fill=WHITE):
+def draw_loop(draw, state, pos, outer, fill):
     r = R_STATE
     x = pos[0]
     y = pos[1]
@@ -615,11 +615,9 @@ def draw_loop(draw, state, pos, outer, fill=WHITE):
     draw_circle(draw, x, y, r, outline=fill, fill=False)
 
     offset = math.pi - (math.pi/3.067)*(R_STATE/r)
-    draw_arrow(draw, x+r*math.cos(angle+offset), y+r*math.sin(angle+offset), angle+0.96*offset-math.pi/2, fill=fill)
+    draw_arrow(draw, x+r*math.cos(angle+offset), y+r*math.sin(angle+offset), angle+0.96*offset-math.pi/2, fill)
 
-def draw_ray(draw, edge, fill=WHITE):
-    draw.line(edge, fill=fill, width=10)
-
+def draw_ray(draw, edge, fill):
     x1 = edge[0][0]
     y1 = edge[0][1]
     x2 = edge[1][0]
@@ -629,9 +627,10 @@ def draw_ray(draw, edge, fill=WHITE):
     xoff = R_STATE*math.cos(angle)
     yoff = R_STATE*math.sin(angle)
 
-    draw_arrow(draw, x2+xoff, y2+yoff, angle)
+    draw.line(((x1-xoff, y1-yoff), (x2+xoff, y2+yoff)), fill=fill, width=10)
+    draw_arrow(draw, x2+xoff, y2+yoff, angle, fill)
 
-def draw_arc(draw, pos, states, edge, outer, inner, fill=WHITE):
+def draw_arc(draw, pos, states, edge, outer, inner, fill):
     points = {}
     scale = get_scale(states, edge, outer, inner)
 
@@ -651,11 +650,14 @@ def draw_arc(draw, pos, states, edge, outer, inner, fill=WHITE):
     for angle in indexes:
         x = points[angle][0]
         y = points[angle][1]
-        draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
 
-        if not in_circle(pos[states[1]], R_STATE, x, y):
-            endx1 = x
-            endy1 = y
+        c1 = in_circle(pos[states[0]], R_STATE, x, y)
+        c2 = in_circle(pos[states[1]], R_STATE, x, y)
+        if not c1 and not c2:
+            if not c2:
+                endx1 = x
+                endy1 = y
+            draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
         
         prevx = x
         prevy = y
@@ -665,7 +667,7 @@ def draw_arc(draw, pos, states, edge, outer, inner, fill=WHITE):
     draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
 
     angle = get_angle(endx2, endy2, endx1, endy1)
-    draw_arrow(draw, endx1, endy1, angle, fill=fill)
+    draw_arrow(draw, endx1, endy1, angle, fill)
 
 def draw_edges(draw, pos, edges, outer, inner):
     color = WHITE if DARK else BLACK
@@ -673,21 +675,22 @@ def draw_edges(draw, pos, edges, outer, inner):
 
     for edge in edges:
         if edge[0] == edge[1]:
-            draw_loop(draw, edge[0], edges[edge][0], outer, fill=color)
+            draw_loop(draw, edge[0], edges[edge][0], outer, color)
         elif edge not in drawn:
             drawn.append((edge[0], edge[1]))
             drawn.append((edge[1], edge[0]))
-            draw_ray(draw, edges[edge], fill=color)
+            draw_ray(draw, edges[edge], color)
         else:
-            draw_arc(draw, pos, edge, edges[edge], outer, inner, fill=color)
+            draw_arc(draw, pos, edge, edges[edge], outer, inner, color)
 
 def draw_states(draw, pos):
     for state in pos:
         x = pos[state][0]
         y = pos[state][1]
-        draw_circle(draw, x, y, R_STATE)
+        draw_circle(draw, x, y, R_STATE, fill=True)
 
 def draw_text(draw, pos):
+    color = WHITE if DARK else BLACK
     count = len(pos)
 
     states = list(pos.keys())
@@ -700,7 +703,6 @@ def draw_text(draw, pos):
         y = pos[state][1] - size/1.5
 
         fnt = ImageFont.truetype("lib/monospace.ttf", size)
-        color = WHITE if DARK else BLACK
 
         draw.text((x, y), text=state, font=fnt, fill=color)
 
@@ -729,7 +731,10 @@ def draw_fsm(draw, states, circular=False):
         for point in points:
             draw_point(draw, point[0], point[1])
 
-def drawer(states, filename, gen_im=True, circular=False):
+def drawer(states, filename, no_bg, dark, circular, gen_im=False):
+    global DARK
+    DARK = dark
+
     draw = None
     if gen_im:
         canvas = (W, H)
@@ -738,6 +743,8 @@ def drawer(states, filename, gen_im=True, circular=False):
         thumb = canvas[0]/scale, canvas[1]/scale
 
         background = BLACK if DARK else WHITE
+        if no_bg:
+            background = None            
         im = Image.new('RGBA', canvas, background)
         draw = ImageDraw.Draw(im)
 
@@ -750,7 +757,6 @@ def drawer(states, filename, gen_im=True, circular=False):
 ''' TODO
 - self loops inner
 - parser fucked something up in test3? may be a bigger issue
-- add dark mode to argparse
 - change default to arc first then straight?
 - if no inner, increase R_STATE
 '''

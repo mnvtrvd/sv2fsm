@@ -44,33 +44,39 @@ def run(path):
             transitions = svp.get_transitions(state, ns)
             svp.save_transitions(state, cs, transitions)
 
-    draw_fsm.drawer(states, "out/" + FILENAME[:-3] + '.png', IMAGE, CIRCULAR)
+    draw_fsm.drawer(states, "out/" + FILENAME[:-3] + '.png', NO_BG, DARK, CIRCULAR, not NO_IMG)
 
     print("finished", path, ": it took", round(time.time()-start, 2), "secs")
     # cleanup()
 
 # get file name
 parser = argparse.ArgumentParser(description='sv2fsm: automatically generates a FSM diagram from SystemVerilog code.')
-parser.add_argument('--test', nargs='?', type=int, const=-1, default=-2, help='this will run script on all test files.')
-parser.add_argument('--stress', nargs='?', type=int, const=10, default=1, help='this will run the given file(s) many times.')
 parser.add_argument('--filename', type=str, default = "", help='this is the file you want to create a FSM from.')
-parser.add_argument('--image', nargs='?', type=bool, const=True, default=False, help='this determines whether or not you generate an image.')
-parser.add_argument('--circular', nargs='?', type=bool, const=True, default=False, help='this generates a circular graph (may have crossing), instead of the default planar (no line crossings).')
+parser.add_argument('--no_bg', nargs='?', type=bool, const=True, default=False, help='this will output a image with no background (useful for papers).')
+parser.add_argument('--dark', nargs='?', type=bool, const=True, default=False, help='this will output a dark-mode image.')
+parser.add_argument('--circle', nargs='?', type=bool, const=True, default=False, help='this generates a basic circular non-planar graph.')
+
+# testing args
+parser.add_argument('--test', nargs='?', type=int, const=-1, default=-2, help='this will run script on test files (add arg for specific).')
+parser.add_argument('--stress', nargs='?', type=int, const=10, default=1, help='this will run the given file(s) many times.')
+parser.add_argument('--no_img', nargs='?', type=bool, const=True, default=False, help='this will not generate an image for debugging purposes.')
+
 args = parser.parse_args()
 
 TEST = args.test
 STRESS = args.stress
 FILENAME = args.filename
-IMAGE = args.image
-CIRCULAR = args.circular
+NO_IMG = args.no_img
+NO_BG = args.no_bg
+DARK = args.dark
+CIRCULAR = args.circle
 
 for i in range(STRESS):
+    NO_IMG = False
     if i == STRESS - 1:
-        IMAGE = args.image
-    else:
-        IMAGE = False
-    FILENAME = args.filename
+        NO_IMG = args.no_img
 
+    FILENAME = args.filename
     PATH = FILENAME
 
     if TEST == -2:
