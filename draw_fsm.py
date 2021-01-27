@@ -15,8 +15,6 @@ R_STATE = round(R_OUT/10)
 GLOBAL_OFFSET = math.pi/2
 STEPS = 10
 
-print(R_OUT, R_STATE)
-
 # https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
 def get_intersection(edge1, edge2):
     x1 = edge1[0][0]
@@ -483,12 +481,8 @@ def resize_outer(inner):
     if len(inner) == 0:
         global R_OUT
         global R_STATE
-        # 2*1/3+2*1/30
         R_OUT = round(W/3.5)
         R_STATE = round(R_OUT/5)
-        # R_OUT = round(0.5*W)
-        # R_STATE = round(R_OUT/10)
-        print(R_OUT, R_STATE)
         return False
 
     return True
@@ -812,8 +806,6 @@ def draw_fsm(draw, states, circular=False):
     elif not planar:
         print("Note: this graph is not planar, returning circular graph")
 
-    print(R_OUT, R_STATE)
-
     # add the self loop edges back in
     states = outer + inner
     edges.update(get_edges(states, pos, self_loops=True))
@@ -850,7 +842,3 @@ def drawer(states, filename, no_bg, dark, circular, gen_im=False):
     if gen_im:
         im.thumbnail(thumb)
         im.save(filename)
-
-''' TODO
-- parser fucked something up in test3? may be a bigger issue
-'''

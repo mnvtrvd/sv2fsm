@@ -112,7 +112,7 @@ def parse_always_combs(path):
     count = 0
 
     for line in lines:
-        if (comb == "") and ("always_comb" in line):
+        if (comb == "") and found("always_comb",line):
             comb = line
 
         if comb != "":
@@ -195,7 +195,7 @@ def get_vars(count, state_vars):
             lines = f.readlines()
 
         for line in lines:
-            if "case" in line:
+            if found("case", line):
                 cond = line.partition("(")[2].partition(")")[0]
                 if cond in state_vars:
                     cs = cond
@@ -251,7 +251,6 @@ def format_states(states):
                     parens -= 1
                 else:
                     f.write("\t"*parens + line)
-                # print((state, parens, line))
 
 def get_state_blocks(ns, states):
     # determine which always_comb block has state transitions
@@ -287,8 +286,6 @@ def get_state_blocks(ns, states):
                 cs = ""
             elif block != line.lstrip():
                 block = block + line.lstrip()
-
-        # print((cs, parens, line))
 
     format_states(states)
 
@@ -388,21 +385,21 @@ def get_transitions(state, ns):
     while i < len(lines):
         d = get_depth(lines[i])
 
-        if "else if" in lines[i]:
+        if found("else if", lines[i]):
             cond, i = get_condition(i, lines)
             if d < len(conditions): # reaching else if on this level after if
                 conditions[d].append(cond)
             else: # reaching else if before if condition
                 print("ERROR: should not get here")
 
-        elif "if" in lines[i]:
+        elif found("if", lines[i]):
             cond, i = get_condition(i, lines)
             if d < len(conditions): # reaching if on this level again, overwrite
                 conditions[d] = [cond]
             else: # reaching if on this level for the first time
                 conditions.append([cond])
 
-        elif "else" in lines[i]:
+        elif found("else", lines[i]):
             cond, i = "", i+1
             if d < len(conditions): # reaching else on this level after if
                 conditions[d].append(cond)
@@ -418,7 +415,7 @@ def get_transitions(state, ns):
             transitions.append((next_state,transition))
         else:
             i += 1
-    
+
     return combine_transitions(transitions)
 
 def save_transitions(state, cs, transitions):
