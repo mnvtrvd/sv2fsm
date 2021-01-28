@@ -240,6 +240,7 @@ def format_states(states):
                         f.write(block.rstrip()+"\n")
 
         reformat_one_liners(filename)
+        reformat_ternary(filename)
 
         with open(filename, "r") as f:
             lines = f.readlines()
@@ -352,6 +353,49 @@ def reformat_one_liners(filename):
                     i = j
                 else:
                     f.write(lines[i])
+            else:
+                f.write(lines[i])
+            
+            i += 1
+
+        return
+
+def reformat_ternary(filename):
+    with open(filename, "r") as f:
+        lines = f.readlines()
+
+    with open(filename, "w") as f:
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            j = i
+            accum = ""
+
+            if "?" in line:
+                while j < len(lines):
+                    accum = accum + lines[j].rstrip() + " "
+                    if ";" in lines[j]:
+                        break
+                    j += 1
+
+            if accum != "":
+                spl = accum.partition("=")
+                var = spl[0].strip()
+                spl = spl[2].partition("?")
+                cond = rem_parens("(" + spl[0].strip() + ")")
+                spl = spl[2].partition(":")
+                if_case = spl[0].strip()
+                else_case = spl[2].strip()
+                f.write("if " + cond + "\n")
+                f.write("begin\n")
+                f.write(var + " = " + if_case + ";\n")
+                f.write("end\n")
+                f.write("else\n")
+                f.write("begin\n")
+                f.write(var + " = " + else_case + "\n")
+                f.write("end\n")
+                
+                i = j
             else:
                 f.write(lines[i])
             

@@ -8,9 +8,9 @@ __pycache__/
 
 # Project specific
 tmp/
-out/
 test/
 *.sv
+*.png
 
 # C extensions
 *.so
