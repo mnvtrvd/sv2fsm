@@ -191,6 +191,8 @@ def swap_nodes(pos, n1, n2, outer, inner):
 def rem_chains(trans):
     done = False
     chain = []
+    start = time.time()
+
     while not done:
         single = []
         for state in trans:
@@ -205,6 +207,10 @@ def rem_chains(trans):
             del trans[state]
 
         done = all(len(trans[state]) != 1 for state in trans)
+        
+        if time.time() - start > TIMEOUT:
+            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs trying to remove chains")
+            break
 
     return chain
 
@@ -313,6 +319,7 @@ def get_values(outer, inner, center=(W,H), offset=0, r_in=0, skip=False):
     return pos, edges, points
 
 def get_faces(target, trans, outer):
+    start = time.time()
     path = []
     visited = []
     faces = []
@@ -333,9 +340,9 @@ def get_faces(target, trans, outer):
             path = [list(valid)[i]]
             visited = []
         else:
-            start = path[0]
+            src = path[0]
             curr = path[-1]
-            if (len(path) > 2) and (start in trans[curr]):    
+            if (len(path) > 2) and (src in trans[curr]):    
                 valid = set(trans) & set(outer)
                 if target == 1:
                     faces.append(path)
@@ -358,6 +365,9 @@ def get_faces(target, trans, outer):
 
             if flag:
                 visited.append(curr)
+
+        if time.time() - start > TIMEOUT:
+            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs trying to get faces")
 
     return faces
 
@@ -426,17 +436,17 @@ def get_scale(states, edge, outer, inner):
     return round(scale)
 
 def get_outer_midpoints(outer, pos):
-    start = outer[0]
+    src = outer[0]
     tmp = outer[1:]
     edges = []
     midpoints = []
     for state in tmp:
-        edges.append((start, state))
-        midpoints.append(get_midpoint(pos[start][0], pos[start][1], pos[state][0], pos[state][1]))
-        start = state
+        edges.append((src, state))
+        midpoints.append(get_midpoint(pos[src][0], pos[src][1], pos[state][0], pos[state][1]))
+        src = state
     
-    edges.append((start, outer[0]))
-    midpoints.append(get_midpoint(pos[start][0], pos[start][1], pos[outer[0]][0], pos[outer[0]][1]))
+    edges.append((src, outer[0]))
+    midpoints.append(get_midpoint(pos[src][0], pos[src][1], pos[outer[0]][0], pos[outer[0]][1]))
 
     return edges, midpoints
 
@@ -471,8 +481,7 @@ def move_inwards(pos, edges, points, outer, inner):
         pos, edges, points = get_values(outer, inner, skip=True)
 
         if time.time() - start > TIMEOUT:
-            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs")
-            break
+            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs trying to move nodes inwards")
     
     pos, edges, points = get_values(outer, inner)
     return pos, edges, points
@@ -508,6 +517,8 @@ def decrowd(outer, inner):
 def recenter_inner(pos, edges, outer, inner):
     trans = get_transitions(edges, outer)
     chains = rem_chains(trans)
+    new_center = (W, H)
+    face = None
 
     v = len(trans)
     e  = 0
@@ -516,15 +527,16 @@ def recenter_inner(pos, edges, outer, inner):
 
     # based off euler's formula v - e + f = 2
     f = 2 + round(e/2) - v
-    faces = get_faces(f-1, trans, outer)
+    if f-1 > 0:
+        faces = get_faces(f-1, trans, outer)
 
-    # simpler method of just placing all the inner nodes in the largest face
-    new_center = (W, H)
-    if len(faces) > 0:
-        _, face = get_longest(faces)
-        new_center = get_centroid(face, pos)
+        # simpler method of just placing all the inner nodes in the largest face
+        if len(faces) > 0:
+            _, face = get_longest(faces)
+            new_center = get_centroid(face, pos)
 
     pos, edges, points = get_values(outer, inner, new_center)
+
     return pos, edges, points, new_center, face
 
 def rotate_inner(new_center, r_in, outer, inner):
@@ -554,20 +566,22 @@ def resize_inner(new_center, face, outer, inner):
         while 2**r_in < len(inner):
             r_in += 1
         
-        while (r_in < W/2) and (r_in < H/2):
+        while r_in < R_OUT/3:
             r_in += 10
             pos, edge, points = get_values(outer, inner, new_center, r_in=r_in)
             
             for angle in range(0, 360, 10):
                 x = new_center[0]/2 + r_in*math.cos(angle)
                 y = new_center[1]/2 + r_in*math.sin(angle)
-                within = in_face(face, pos, x, y)
+                within = True
+                if face != None:
+                    within = in_face(face, pos, x, y)
                 if not within:
                     if r_in > R_STATE:
                         r_in = r_in - R_STATE
 
                     r_in = r_in*0.8
-                    
+
                     pos, edge, points = get_values(outer, inner, new_center, r_in=r_in)
                     return pos, edge, points, r_in
 
@@ -598,7 +612,7 @@ def swap_inwards(pos, edges, points, outer, inner):
         points = get_points(edges)
 
         if time.time() - start > TIMEOUT:
-            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs")
+            print("WARNING: exceeded maximum runtime of", TIMEOUT, "secs trying to swap nodes inwards")
             break
     
     return pos, edges, points
@@ -620,9 +634,9 @@ def rearrange_states(pos, edges, points, states):
         pos, edges, points = swap_inwards(pos, edges, points, outer, inner)
 
     if len(points) > 0:
-        print("ERROR: the graph is still not polar despite applying all transformations")
+        print("WARNING: the graph is still not planar despite applying all transformations, returning as planar of a graph as possible")
 
-    return pos, edges, points, new_center, outer, inner
+    return pos, edges, new_center, outer, inner
 
 ################################################################################
 
@@ -802,7 +816,7 @@ def draw_fsm(draw, states, circular=False):
 
     # if (len(points) != 0) and 
     if planar and not circular:
-        pos, edges, points, center, outer, inner = rearrange_states(pos, edges, points, states)
+        pos, edges, center, outer, inner = rearrange_states(pos, edges, points, states)
     elif not planar:
         print("Note: this graph is not planar, returning circular graph")
 
@@ -813,8 +827,6 @@ def draw_fsm(draw, states, circular=False):
         draw_edges(draw, pos, edges, outer, inner)
         draw_states(draw, pos)
         draw_text(draw, pos)
-        for point in points:
-            draw_point(draw, point[0], point[1])
 
 def drawer(states, filename, no_bg, dark, circular, gen_im=False):
     global DARK

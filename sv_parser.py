@@ -239,6 +239,8 @@ def format_states(states):
                     if block.rstrip() != "":
                         f.write(block.rstrip()+"\n")
 
+        reformat_one_liners(filename)
+
         with open(filename, "r") as f:
             lines = f.readlines()
 
@@ -314,6 +316,48 @@ def get_condition(index, lines):
         index += 1
     
     return (cond[1:], index)
+
+def reformat_one_liners(filename):
+    with open(filename, "r") as f:
+        lines = f.readlines()
+
+    with open(filename, "w") as f:
+        i = 0
+        while i < len(lines):
+            line = lines[i]
+            j = i
+            accum = ""
+
+            if found("else if", line) or found("if", line) or found("else", line):
+                while j < len(lines):
+                    accum = accum + lines[j].rstrip() + " "
+                    if ";" in lines[j]:
+                        break
+                    j += 1
+
+            if accum != "":
+                if not found("begin", accum):
+                    if found("if", line): # both if and else if case
+                        cond, _ = get_condition(0, [line])
+                        spl = accum.partition("(" + cond + ")")
+                        f.write((spl[0] + spl[1]).strip() + "\n")
+                    else: # else case
+                        spl = accum.partition("else")
+                        f.write(spl[1].strip() + "\n")
+
+                    f.write("begin\n")
+                    f.write(spl[2].strip() + "\n")
+                    f.write("end\n")
+
+                    i = j
+                else:
+                    f.write(lines[i])
+            else:
+                f.write(lines[i])
+            
+            i += 1
+
+        return
 
 def get_next_state(index, lines):
     next_state = lines[index].partition("=")[2].strip()
@@ -391,6 +435,7 @@ def get_transitions(state, ns):
                 conditions[d].append(cond)
             else: # reaching else if before if condition
                 print("ERROR: should not get here")
+                exit()
 
         elif found("if", lines[i]):
             cond, i = get_condition(i, lines)
@@ -405,6 +450,7 @@ def get_transitions(state, ns):
                 conditions[d].append(cond)
             else: # reaching else before if condition
                 print("ERROR: should not get here")
+                exit()
 
         elif ns in lines[i]:
             transition = ""
@@ -447,7 +493,7 @@ def save_transitions(state, cs, transitions):
                 else:
                     return
             elif len(transitions) == 0:
-                print("ERROR: are you sure all case and conditional statements have a begin/end?")
+                print("ERROR: are you sure all cases have a begin/end?")
                 return
             else:
                 s = list(transitions.keys())[0]

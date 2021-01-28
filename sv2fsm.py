@@ -41,13 +41,13 @@ def run(path):
 
     # get transitions from every state and save it in a file
     for state in states:
-            transitions = svp.get_transitions(state, ns)
-            svp.save_transitions(state, cs, transitions)
+        transitions = svp.get_transitions(state, ns)
+        svp.save_transitions(state, cs, transitions)
 
     draw_fsm.drawer(states, "out/" + FILENAME[:-3] + '.png', NO_BG, DARK, CIRCULAR, not NO_IMG)
 
     print("finished", path, ": it took", round(time.time()-start, 2), "secs")
-    # cleanup()
+    cleanup()
 
 # get file name
 parser = argparse.ArgumentParser(description='sv2fsm: automatically generates a FSM diagram from SystemVerilog code.')
@@ -86,8 +86,6 @@ for i in range(STRESS):
         FILENAME = "test"+str(i)+".sv"
         while os.path.exists("test/" + FILENAME):
             i += 1
-            if (i == 13) or (i == 9) or (i == 8):
-                continue
             run("test/" + FILENAME)
             FILENAME = "test"+str(i)+".sv"
     else:
