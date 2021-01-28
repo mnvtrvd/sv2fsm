@@ -1,19 +1,25 @@
 import math
-import matplotlib.pyplot as plt
 import networkx as nx
 import random
 import time
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-TIMEOUT = 10
+TIMEOUT = 5
 DARK = False
 
-W = 12000
+W = 2000
 H = W
 R_OUT = round(W/3)
 R_STATE = round(R_OUT/10)
+THICKNESS = round(W/750)
 GLOBAL_OFFSET = math.pi/2
 STEPS = 10
+
+def scale_rstate(scale=1):
+    global R_STATE
+    R_STATE = round(scale*R_OUT/10)
+
+################################################################################
 
 # https://en.wikipedia.org/wiki/Line%E2%80%93line_intersection
 def get_intersection(edge1, edge2):
@@ -58,15 +64,19 @@ def get_midpoint(x1, y1, x2, y2):
     y = miny + (maxy-miny)/2
     return x, y
 
-def get_longest(states):
-    length = 0
-    longest = ""
-    for state in states:
-        if len(state) > length:
-            length = len(state)
-            longest = state
+def get_slope(edge):
+    x1 = edge[0][0]
+    y1 = edge[0][1]
+    x2 = edge[1][0]
+    y2 = edge[1][1]
     
-    return length, longest
+    if x2 != x1:
+        return (y2-y1)/(x2-x1)
+    else:
+        return float('inf')
+
+def get_angle(x1, y1, x2, y2):
+    return math.atan2(y2-y1, x2-x1)
 
 def get_closest(arr, x, y):
     l = 0
@@ -84,20 +94,6 @@ def get_closest(arr, x, y):
                 shortest.append(p)
 
     return l, shortest
-
-def get_slope(edge):
-    x1 = edge[0][0]
-    y1 = edge[0][1]
-    x2 = edge[1][0]
-    y2 = edge[1][1]
-    
-    if x2 != x1:
-        return (y2-y1)/(x2-x1)
-    else:
-        return float('inf')
-
-def get_angle(x1, y1, x2, y2):
-    return math.atan2(y2-y1, x2-x1)
 
 def get_face_angle(x1, y1, x2, y2):
     delta = math.atan2(y2, x2) - math.atan2(y1, x1)
@@ -130,6 +126,18 @@ def in_face(face, pos, x, y):
     
     return abs(angle) >= math.pi
 
+################################################################################
+
+def get_longest(states):
+    length = 0
+    longest = ""
+    for state in states:
+        if len(state) > length:
+            length = len(state)
+            longest = state
+    
+    return length, longest
+
 def check_adjacent(states, outer, inner):
     if (states[0] in outer) != (states[1] in outer):
         return False
@@ -148,8 +156,6 @@ def check_adjacent(states, outer, inner):
         return True
     
     return False
-
-################################################################################
 
 def is_planar_graph(states):
     fsm = nx.MultiDiGraph()
@@ -450,7 +456,6 @@ def get_outer_midpoints(outer, pos):
 
     return edges, midpoints
 
-
 ################################################################################
 
 def move_inwards(pos, edges, points, outer, inner):
@@ -488,10 +493,7 @@ def move_inwards(pos, edges, points, outer, inner):
 
 def resize_outer(inner):
     if len(inner) == 0:
-        global R_OUT
-        global R_STATE
-        R_OUT = round(W/3.5)
-        R_STATE = round(R_OUT/5)
+        scale_rstate(1.5)
         return False
 
     return True
@@ -646,9 +648,10 @@ def draw_point(draw, x, y, fill="green", r=80):
     twoPointList = [leftUpPoint, rightDownPoint]
     draw.ellipse(twoPointList, fill=fill)
 
-def draw_arrow(draw, x, y, angle, fill, r=100):
+def draw_arrow(draw, x, y, angle, fill):
     eqtri = math.pi/6
     p1 = x, y
+    r = W/100
     p2 = x + r*math.cos(eqtri+angle), y + r*math.sin(eqtri+angle)
     p3 = x + r*math.cos(eqtri-angle), y - r*math.sin(eqtri-angle)
 
@@ -661,7 +664,7 @@ def draw_circle(draw, x, y, r, outline="red", fill=False):
     bg = None
     if fill:
         bg = "black" if DARK else "white"
-    draw.ellipse(twoPointList, outline=outline, fill=bg, width=10)
+    draw.ellipse(twoPointList, outline=outline, fill=bg, width=THICKNESS)
 
 def draw_loop(draw, pos, edges, state, p, outer, inner, fill):
     r = R_STATE
@@ -671,7 +674,7 @@ def draw_loop(draw, pos, edges, state, p, outer, inner, fill):
     out_edges, out_mid = get_outer_midpoints(outer, pos)
 
     if state in outer:
-        r *= 1.5
+        r *= 1.25
         angle = get_angle(W/2, H/2, x, y)
         x = round(x + r*math.cos(angle))
         y = round(y + r*math.sin(angle))
@@ -724,7 +727,7 @@ def draw_ray(draw, edge, fill):
     xoff = R_STATE*math.cos(angle)
     yoff = R_STATE*math.sin(angle)
 
-    draw.line(((x1-xoff, y1-yoff), (x2+xoff, y2+yoff)), fill=fill, width=10)
+    draw.line(((x1-xoff, y1-yoff), (x2+xoff, y2+yoff)), fill=fill, width=THICKNESS)
     draw_arrow(draw, x2+xoff, y2+yoff, angle, fill)
 
 def draw_arc(draw, pos, states, edge, outer, inner, fill):
@@ -754,14 +757,14 @@ def draw_arc(draw, pos, states, edge, outer, inner, fill):
             if not c2:
                 endx1 = x
                 endy1 = y
-            draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
+            draw.line(((prevx, prevy), (x, y)), fill=fill, width=THICKNESS)
         
         prevx = x
         prevy = y
     
     x = edge[1][0]
     y = edge[1][1]
-    draw.line(((prevx, prevy), (x, y)), fill=fill, width=10)
+    draw.line(((prevx, prevy), (x, y)), fill=fill, width=THICKNESS)
 
     angle = get_angle(endx2, endy2, endx1, endy1)
     draw_arrow(draw, endx1, endy1, angle, fill)
@@ -803,54 +806,39 @@ def draw_text(draw, pos):
 
         draw.text((x, y), text=state, font=fnt, fill=color)
 
-def draw_fsm(draw, states, circular=False):
+def drawer(states, filename, no_bg, dark, circular):
+    global DARK
+    DARK = dark
+    scale_rstate()
+
+    draw = None
+    canvas = (W, H)
+
+    background = "black" if DARK else "white"
+    if no_bg:
+        background = None            
+    im = Image.new('RGBA', canvas, background)
+    draw = ImageDraw.Draw(im)
+
     r_in = 0
     center = (0,0)
     outer = states
     inner = []
 
     planar = is_planar_graph(states)
-    pos = get_xy(R_OUT, states)
-    edges = get_edges(states, pos)
-    points = get_points(edges)
+    pos, edges, points = get_values(outer, inner)
 
-    # if (len(points) != 0) and 
     if planar and not circular:
         pos, edges, center, outer, inner = rearrange_states(pos, edges, points, states)
     elif not planar:
         print("Note: this graph is not planar, returning circular graph")
 
     # add the self loop edges back in
-    states = outer + inner
-    edges.update(get_edges(states, pos, self_loops=True))
+    edges.update(get_edges(outer + inner, pos, self_loops=True))
+
     if draw != None:
         draw_edges(draw, pos, edges, outer, inner)
         draw_states(draw, pos)
         draw_text(draw, pos)
 
-def drawer(states, filename, no_bg, dark, circular, gen_im=False):
-    global DARK
-    global R_OUT
-    global R_STATE
-    DARK = dark
-    R_OUT = round(W/3)
-    R_STATE = round(R_OUT/10)
-
-    draw = None
-    if gen_im:
-        canvas = (W, H)
-
-        scale = 5
-        thumb = canvas[0]/scale, canvas[1]/scale
-
-        background = "black" if DARK else "white"
-        if no_bg:
-            background = None            
-        im = Image.new('RGBA', canvas, background)
-        draw = ImageDraw.Draw(im)
-
-    draw_fsm(draw, states, circular)
-
-    if gen_im:
-        im.thumbnail(thumb)
-        im.save(filename)
+    im.save(filename)
