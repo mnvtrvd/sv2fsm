@@ -2,10 +2,12 @@ import math
 import networkx as nx
 import random
 import time
+from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 TIMEOUT = 5
 DARK = False
+HOME = str(Path.home())
 
 W = 2000
 H = W
@@ -802,7 +804,7 @@ def draw_text(draw, pos):
         x = pos[state][0] - len(state)*size/3.5
         y = pos[state][1] - size/1.5
 
-        fnt = ImageFont.truetype("lib/monospace.ttf", size)
+        fnt = ImageFont.truetype(HOME + "/sv2fsm/lib/monospace.ttf", size)
 
         draw.text((x, y), text=state, font=fnt, fill=color)
 

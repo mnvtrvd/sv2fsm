@@ -1,6 +1,17 @@
 import os
+import shutil
 
 TMP = "tmp/"
+
+def cleanup(terminate=True):
+    # delete tmp directory
+    if os.path.isdir(os.getcwd() + "/tmp"):
+        shutil.rmtree("tmp")
+
+    if terminate:
+        exit()
+
+################################################################################
 
 def get_depth(line):
     tabs = 0
@@ -133,7 +144,7 @@ def parse_always_combs(path):
 
     if count == 0:
         print("ERROR: this file does not contain any always_comb blocks")
-        exit()
+        cleanup()
     else:
         return count
 
@@ -154,7 +165,7 @@ def which_comb(ns):
         filename = TMP + "always" + str(i) + ".sv"
     
     print("ERROR: this file does not contain any always_comb blocks with state transitions")
-    exit()
+    cleanup()
 
 def get_states(path):
     with open(path, "r") as f:
@@ -176,12 +187,15 @@ def get_states(path):
                 break
 
     tmp = enum.partition("{")[2].partition("}")
-    states = tmp[0].replace(" ", "").split(",")
+    state_def = tmp[0].replace(" ", "").split(",")
+    states = []
+    for s in state_def:
+        states.append(s.partition("=")[0])
     state_vars = tmp[2].replace(";", "").replace(" ", "").split(",")
 
     if len(states) == 0:
         print("ERROR: this file does not contain any enum to specify states")
-        exit()
+        cleanup()
     else:
         return (states, state_vars)
 
@@ -213,7 +227,7 @@ def get_vars(count, state_vars):
     
     if (cs == "") or (ns == ""):
         print("ERROR: could not locate current and/or next state variables")
-        exit()
+        cleanup()
     else:
         return (cs, ns)
 
@@ -479,7 +493,7 @@ def get_transitions(state, ns):
                 conditions[d].append(cond)
             else: # reaching else if before if condition
                 print("ERROR: should not get here")
-                exit()
+                cleanup()
 
         elif found("if", lines[i]):
             cond, i = get_condition(i, lines)
@@ -494,7 +508,7 @@ def get_transitions(state, ns):
                 conditions[d].append(cond)
             else: # reaching else before if condition
                 print("ERROR: should not get here")
-                exit()
+                cleanup()
 
         elif ns in lines[i]:
             transition = ""
