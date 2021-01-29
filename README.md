@@ -42,6 +42,6 @@ To start using this tool, run `python sv2fsm.py --setup` to move this to your ho
 You would find it useful to add `alias sv2fsm='python3 ~/sv2fsm/sv2fsm.py ---filename'` to your bash profile.
 (*shameless plug* this is really seemless with my other project bash-manager)
 
-Simply run `python3 sv2fsm.py --filename your_file.sv` or `sv2fsm your_file.sv` (if you created an alias) to generate the FSM.
+Simply run `python3 ~/sv2fsm/sv2fsm.py --filename your_file.sv` or `sv2fsm your_file.sv` (if you created an alias) to generate the FSM.
 
 ## Usage:
